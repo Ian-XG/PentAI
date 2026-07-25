@@ -1,0 +1,29 @@
+from pentai.scope import Scope
+from pentai.tools.shell import run_command, CommandResult, RUN_COMMAND_TOOL
+
+def _fixed_runner(out):
+    return lambda cmd: CommandResult(out, "", 0)
+
+def test_runs_when_in_scope_and_confirmed():
+    r = run_command("nmap 10.0.0.5", scope=Scope(["10.0.0.0/24"]),
+                    confirm=lambda prompt: True, runner=_fixed_runner("open ports"))
+    assert "open ports" in r
+
+def test_cancelled_when_declined():
+    r = run_command("nmap 10.0.0.5", scope=Scope(["10.0.0.0/24"]),
+                    confirm=lambda prompt: False, runner=_fixed_runner("x"))
+    assert "cancelled" in r.lower()
+
+def test_out_of_scope_requires_confirm():
+    seen = []
+    def confirm(prompt):
+        seen.append(prompt)
+        return False
+    r = run_command("nmap 1.2.3.4", scope=Scope(["10.0.0.0/24"]),
+                    confirm=confirm, runner=_fixed_runner("x"))
+    assert any("scope" in p.lower() for p in seen)
+    assert "cancelled" in r.lower()
+
+def test_tool_schema_name():
+    assert RUN_COMMAND_TOOL.name == "run_command"
+    assert "command" in RUN_COMMAND_TOOL.parameters["properties"]
