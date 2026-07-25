@@ -1,4 +1,4 @@
-from pentai.providers.base import Message, Tool, TextDelta, Done
+from pentai.providers.base import Message, Tool, TextDelta, ToolCallEvent, Done
 from pentai.providers.openai_compat import build_payload, parse_sse_chunk, OpenAICompatProvider
 
 def test_build_payload_includes_stream_and_tools():
@@ -30,3 +30,20 @@ def test_chat_streams_from_injected_poster():
     events = list(prov.chat([Message("user", "hi")], []))
     assert any(isinstance(e, TextDelta) and e.text == "hi" for e in events)
     assert any(isinstance(e, Done) for e in events)
+
+def test_chat_assembles_multichunk_tool_call():
+    lines = [
+        'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"run_command","arguments":""}}]}}]}',
+        'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\\"command\\":"}}]}}]}',
+        'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\\"ls\\"}"}}]}}]}',
+        'data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}',
+        'data: [DONE]',
+    ]
+    prov = OpenAICompatProvider("http://x/v1", "k", "gpt-4o",
+                                poster=lambda url, headers, json: iter(lines))
+    events = list(prov.chat([Message("user", "scan")], []))
+    tcs = [e for e in events if isinstance(e, ToolCallEvent)]
+    assert len(tcs) == 1
+    assert tcs[0].name == "run_command"
+    assert tcs[0].arguments == {"command": "ls"}
+    assert any(isinstance(e, Done) and e.stop_reason == "tool_use" for e in events)

@@ -33,14 +33,6 @@ def build_payload(messages: list[Message], tools: list[Tool], model: str) -> dic
 def parse_sse_chunk(data: dict) -> Event | None:
     choice = (data.get("choices") or [{}])[0]
     delta = choice.get("delta", {})
-    if delta.get("tool_calls"):
-        tc = delta["tool_calls"][0]
-        args = tc.get("function", {}).get("arguments") or "{}"
-        try:
-            parsed = _json.loads(args)
-        except _json.JSONDecodeError:
-            parsed = {}
-        return ToolCallEvent(tc.get("id", ""), tc.get("function", {}).get("name", ""), parsed)
     if delta.get("content"):
         return TextDelta(delta["content"])
     if choice.get("finish_reason"):
@@ -67,12 +59,40 @@ class OpenAICompatProvider:
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
         payload = build_payload(messages, tools, self.model)
+        tool_buffer: dict[int, dict] = {}
         for line in self._poster(url, headers, payload):
             if not line or not line.startswith("data:"):
                 continue
-            data = line[len("data:"):].strip()
-            if data == "[DONE]":
+            data_str = line[len("data:"):].strip()
+            if data_str == "[DONE]":
                 break
-            ev = parse_sse_chunk(_json.loads(data))
-            if ev is not None:
-                yield ev
+            data = _json.loads(data_str)
+            choice = (data.get("choices") or [{}])[0]
+            delta = choice.get("delta", {})
+            for tc in delta.get("tool_calls") or []:
+                idx = tc.get("index", 0)
+                buf = tool_buffer.setdefault(idx, {"id": "", "name": "", "arguments": ""})
+                if tc.get("id"):
+                    buf["id"] = tc["id"]
+                fn = tc.get("function") or {}
+                if fn.get("name"):
+                    buf["name"] = fn["name"]
+                if fn.get("arguments"):
+                    buf["arguments"] += fn["arguments"]
+            finish = choice.get("finish_reason")
+            if finish == "tool_calls":
+                for i in sorted(tool_buffer):
+                    buf = tool_buffer[i]
+                    try:
+                        args = _json.loads(buf["arguments"] or "{}")
+                    except _json.JSONDecodeError:
+                        args = {}
+                    yield ToolCallEvent(buf["id"], buf["name"], args)
+                tool_buffer = {}
+                yield Done("tool_use")
+            elif finish:
+                yield Done("end")
+            else:
+                ev = parse_sse_chunk(data)
+                if ev is not None:
+                    yield ev
