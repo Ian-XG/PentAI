@@ -9,6 +9,7 @@ class ProviderConfig:
     model: str
     api_key: str | None = None
     base_url: str | None = None
+    api_key_env: str | None = None
 
 @dataclass
 class Config:
@@ -40,7 +41,7 @@ def load_config(data: dict | None = None, env: dict[str, str] | None = None) -> 
                      fx=data.get("fx", True), palette=data.get("palette", "green"),
                      scope=list(data.get("scope", [])))
     for name, pc in cfg.providers.items():
-        key_env = _ENV_KEYS.get(name)
+        key_env = pc.api_key_env or _ENV_KEYS.get(name)
         if pc.api_key is None and key_env and env.get(key_env):
             pc.api_key = env[key_env]
     return cfg

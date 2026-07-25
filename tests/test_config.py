@@ -18,3 +18,11 @@ def test_openai_compat_reads_base_url():
     cfg = load_config(data)
     assert cfg.providers["ollama"].base_url == "http://localhost:11434/v1"
     assert cfg.providers["ollama"].kind == "openai_compat"
+
+def test_api_key_env_field_overrides_by_name():
+    data = {"active": "groq",
+            "providers": {"groq": {"kind": "openai_compat", "model": "llama-3.1-70b",
+                                   "api_key_env": "GROQ_API_KEY",
+                                   "base_url": "https://api.groq.com/openai/v1"}}}
+    cfg = load_config(data, env={"GROQ_API_KEY": "gsk-test"})
+    assert cfg.providers["groq"].api_key == "gsk-test"
