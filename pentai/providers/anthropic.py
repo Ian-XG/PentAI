@@ -75,12 +75,14 @@ class AnthropicProvider:
                                         "name": block.get("name", ""), "arguments": ""}
             elif event_type == "content_block_delta":
                 delta = data.get("delta", {})
-                if delta.get("type") == "text_delta":
-                    yield TextDelta(delta.get("text", ""))
-                elif delta.get("type") == "input_json_delta":
+                if delta.get("type") == "input_json_delta":
                     idx = data.get("index", 0)
                     if idx in tool_buffer:
                         tool_buffer[idx]["arguments"] += delta.get("partial_json", "")
+                else:
+                    ev = parse_sse_event(event_type, data)
+                    if ev is not None:
+                        yield ev
             elif event_type == "content_block_stop":
                 idx = data.get("index", 0)
                 buf = tool_buffer.pop(idx, None)
