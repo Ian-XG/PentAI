@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Callable
 from prompt_toolkit import PromptSession
 from rich.console import Console
+from rich.markup import escape
 from .config import Config, load_config, default_config
 from .scope import Scope
 from .providers.factory import build_provider
@@ -54,7 +55,9 @@ def main(argv: list[str] | None = None) -> int:
     cmds = 0
 
     def confirm(prompt: str) -> bool:
-        return console.input(f"[{palette['accent']}]{prompt} [y/N] [/]").strip().lower() == "y"
+        return console.input(
+            f"[{palette['accent']}]{escape(prompt)} [y/N] [/]"
+        ).strip().lower() == "y"
 
     agent = build_agent(cfg, scope, confirm, session_dir)
     session: PromptSession = PromptSession()
@@ -72,12 +75,16 @@ def main(argv: list[str] | None = None) -> int:
                 break
             console.print(result, style=palette["accent"])
             continue
-        for ev in agent.send(line):
-            if isinstance(ev, TextDelta):
-                console.print(ev.text, style=palette["primary"], end="")
-            elif isinstance(ev, ToolInvocation):
-                cmds += 1
-                console.print(f"\n[EXEC] {ev.arguments}\n{ev.result}", style=palette["accent"])
-        console.print()
+        try:
+            for ev in agent.send(line):
+                if isinstance(ev, TextDelta):
+                    console.print(ev.text, style=palette["primary"], end="")
+                elif isinstance(ev, ToolInvocation):
+                    cmds += 1
+                    console.print(f"\n[EXEC] {ev.arguments}\n{ev.result}",
+                                  style=palette["accent"], markup=False)
+            console.print()
+        except Exception as e:
+            console.print(f"\n[!] error: {e}", style=palette["alert"])
     console.print("bye", style=palette["dim"])
     return 0
