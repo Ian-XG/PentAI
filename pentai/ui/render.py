@@ -1,3 +1,5 @@
+from rich.theme import Theme
+
 _TAGS = {"AI": "[AI]", "EXEC": "[EXEC]", "VULN": "[!] VULN", "INFO": "[INFO]"}
 
 def format_tag(kind: str, text: str) -> str:
@@ -6,3 +8,19 @@ def format_tag(kind: str, text: str) -> str:
 
 def status_bar(provider: str, model: str, scope_count: int, cmds: int, mode: str = "ask") -> str:
     return f"-[ {provider}:{model} ]-[ scope:{scope_count} ]-[ mode:{mode.upper()} ]-[ cmds:{cmds} ]-"
+
+def markdown_theme(palette: dict[str, str]) -> Theme:
+    accent = palette["accent"]
+    dim = palette["dim"]
+    return Theme({
+        "markdown.h1": f"bold {accent}",
+        "markdown.h2": f"bold {accent}",
+        "markdown.h3": accent,
+        "markdown.h4": accent,
+        "markdown.item.number": accent,
+        "markdown.item.bullet": accent,
+        "markdown.table.header": f"bold {accent}",
+        "markdown.hr": dim,
+        "markdown.code": accent,
+        "markdown.link": accent,
+    })

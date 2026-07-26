@@ -30,3 +30,9 @@ def test_provider_ready_true_for_keyless_local(monkeypatch):
                  providers={"o": ProviderConfig("openai_compat", "llama3.1",
                                                  base_url="http://localhost:11434/v1")})
     assert provider_ready(cfg) is True
+
+def test_apply_mode_command_cycles_and_sets():
+    from pentai.cli import apply_mode_command
+    assert apply_mode_command("ask", []) == "auto"      # cycle
+    assert apply_mode_command("ask", ["bypass"]) == "bypass"  # set
+    assert apply_mode_command("ask", ["nonsense"]) == "ask"   # invalid -> unchanged
