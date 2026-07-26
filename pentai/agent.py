@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Callable, Iterator
 from .providers.base import (Provider, Message, Tool, ToolCall,
                              TextDelta, ToolCallEvent, Done)
@@ -25,12 +25,14 @@ class Agent:
         self.history: list[Message] = history if history is not None else []
         self._tool_defs: list[Tool] = [s.tool for s in tools.values()]
 
+    MAX_ITERATIONS = 25
+
     def send(self, user_text: str) -> Iterator[AgentEvent]:
         self.history.append(Message("user", user_text))
-        while True:
+        for _ in range(self.MAX_ITERATIONS):
             text_parts: list[str] = []
             pending: list[ToolCall] = []
-            for ev in self.provider.chat(self.history, self._tool_defs):
+            for ev in self.provider.chat(self.history, self._tool_defs, self.system_prompt):
                 if isinstance(ev, TextDelta):
                     text_parts.append(ev.text)
                     yield ev

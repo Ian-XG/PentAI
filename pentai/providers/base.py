@@ -37,5 +37,6 @@ class Done:
 Event = TextDelta | ToolCallEvent | Done
 
 class Provider(Protocol):
-    def chat(self, messages: list[Message], tools: list[Tool]) -> Iterator[Event]:
+    def chat(self, messages: list[Message], tools: list[Tool],
+             system: str = "") -> Iterator[Event]:
         ...

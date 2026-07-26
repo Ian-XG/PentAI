@@ -9,6 +9,23 @@ def test_build_payload_shape():
     assert p["tools"][0]["name"] == "run_command"
     assert "max_tokens" in p
 
+def test_build_payload_includes_system():
+    p = build_payload([Message("user", "hi")], [], "claude-opus-4", system="be ethical")
+    assert p["system"] == "be ethical"
+    assert "system" not in build_payload([Message("user", "hi")], [], "m")
+
+def test_build_payload_coalesces_tool_results():
+    msgs = [Message("tool", "r1", tool_call_id="a"),
+            Message("tool", "r2", tool_call_id="b")]
+    p = build_payload(msgs, [], "claude-opus-4")
+    user_msgs = [m for m in p["messages"] if m["role"] == "user"]
+    assert len(user_msgs) == 1
+    content = user_msgs[0]["content"]
+    assert len(content) == 2
+    assert content[0]["tool_use_id"] == "a"
+    assert content[1]["tool_use_id"] == "b"
+    assert all(b["type"] == "tool_result" for b in content)
+
 def test_parse_text_delta():
     ev = parse_sse_event("content_block_delta",
                          {"delta": {"type": "text_delta", "text": "hi"}})

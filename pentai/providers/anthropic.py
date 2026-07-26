@@ -21,13 +21,33 @@ def _message_to_dict(m: Message) -> dict:
         return {"role": "assistant", "content": blocks}
     return {"role": m.role, "content": m.content}
 
-def build_payload(messages: list[Message], tools: list[Tool], model: str) -> dict:
+def build_payload(messages: list[Message], tools: list[Tool], model: str,
+                  system: str = "") -> dict:
+    out: list[dict] = []
+    pending: list[dict] = []
+
+    def flush() -> None:
+        nonlocal pending
+        if pending:
+            out.append({"role": "user", "content": pending})
+            pending = []
+
+    for m in messages:
+        if m.role == "tool":
+            pending.append({"type": "tool_result", "tool_use_id": m.tool_call_id,
+                            "content": m.content})
+        else:
+            flush()
+            out.append(_message_to_dict(m))
+    flush()
     payload: dict = {
         "model": model,
         "stream": True,
         "max_tokens": 4096,
-        "messages": [_message_to_dict(m) for m in messages],
+        "messages": out,
     }
+    if system:
+        payload["system"] = system
     if tools:
         payload["tools"] = [
             {"name": t.name, "description": t.description, "input_schema": t.parameters}
@@ -59,11 +79,12 @@ class AnthropicProvider:
         self.model = model
         self._poster = poster or _httpx_poster
 
-    def chat(self, messages: list[Message], tools: list[Tool]) -> Iterator[Event]:
+    def chat(self, messages: list[Message], tools: list[Tool],
+             system: str = "") -> Iterator[Event]:
         headers = {"Content-Type": "application/json",
                    "anthropic-version": _VERSION,
                    "x-api-key": self.api_key or ""}
-        payload = build_payload(messages, tools, self.model)
+        payload = build_payload(messages, tools, self.model, system)
         tool_buffer: dict[int, dict] = {}
         stop_reason = "end"
         for event_type, data in self._poster(_API, headers, payload):

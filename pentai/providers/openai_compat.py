@@ -15,11 +15,14 @@ def _message_to_dict(m: Message) -> dict:
         ]
     return d
 
-def build_payload(messages: list[Message], tools: list[Tool], model: str) -> dict:
+def build_payload(messages: list[Message], tools: list[Tool], model: str,
+                  system: str = "") -> dict:
+    msgs: list[dict] = [{"role": "system", "content": system}] if system else []
+    msgs.extend(_message_to_dict(m) for m in messages)
     payload: dict = {
         "model": model,
         "stream": True,
-        "messages": [_message_to_dict(m) for m in messages],
+        "messages": msgs,
     }
     if tools:
         payload["tools"] = [
@@ -53,12 +56,13 @@ class OpenAICompatProvider:
         self.model = model
         self._poster = poster or _httpx_poster
 
-    def chat(self, messages: list[Message], tools: list[Tool]) -> Iterator[Event]:
+    def chat(self, messages: list[Message], tools: list[Tool],
+             system: str = "") -> Iterator[Event]:
         url = f"{self.base_url}/chat/completions"
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
-        payload = build_payload(messages, tools, self.model)
+        payload = build_payload(messages, tools, self.model, system)
         tool_buffer: dict[int, dict] = {}
         for line in self._poster(url, headers, payload):
             if not line or not line.startswith("data:"):

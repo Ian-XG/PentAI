@@ -24,6 +24,17 @@ def test_out_of_scope_requires_confirm():
     assert any("scope" in p.lower() for p in seen)
     assert "cancelled" in r.lower()
 
+def test_out_of_scope_confirmed_then_execute_declined():
+    calls = []
+    def runner(cmd):
+        calls.append(cmd)
+        return CommandResult("x", "", 0)
+    answers = iter([True, False])
+    r = run_command("nmap 1.2.3.4", scope=Scope(["10.0.0.0/24"]),
+                    confirm=lambda prompt: next(answers), runner=runner)
+    assert "cancelled" in r.lower()
+    assert calls == []
+
 def test_tool_schema_name():
     assert RUN_COMMAND_TOOL.name == "run_command"
     assert "command" in RUN_COMMAND_TOOL.parameters["properties"]

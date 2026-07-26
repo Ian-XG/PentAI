@@ -40,11 +40,16 @@ def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     fx = "--no-fx" not in argv
     console = Console()
+    cfg_error: Exception | None = None
     try:
         cfg = load_config_file()
-    except Exception:
+    except Exception as e:
+        cfg_error = e
         cfg = default_config()
     palette = get_palette(cfg.palette)
+    if cfg_error is not None:
+        console.print(f"[!] could not load config, using defaults: {cfg_error}",
+                      style=palette["alert"], markup=False)
     if fx:
         for line in boot_lines():
             console.print(line, style=palette["dim"])
@@ -78,7 +83,7 @@ def main(argv: list[str] | None = None) -> int:
         try:
             for ev in agent.send(line):
                 if isinstance(ev, TextDelta):
-                    console.print(ev.text, style=palette["primary"], end="")
+                    console.print(ev.text, style=palette["primary"], end="", markup=False)
                 elif isinstance(ev, ToolInvocation):
                     cmds += 1
                     console.print(f"\n[EXEC] {ev.arguments}\n{ev.result}",

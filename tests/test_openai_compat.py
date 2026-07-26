@@ -9,6 +9,12 @@ def test_build_payload_includes_stream_and_tools():
     assert p["tools"][0]["function"]["name"] == "run_command"
     assert p["messages"][0] == {"role": "user", "content": "hi"}
 
+def test_build_payload_prepends_system():
+    p = build_payload([Message("user", "hi")], [], "gpt-4o", system="be ethical")
+    assert p["messages"][0] == {"role": "system", "content": "be ethical"}
+    p2 = build_payload([Message("user", "hi")], [], "gpt-4o")
+    assert p2["messages"][0]["role"] == "user"
+
 def test_parse_text_delta():
     chunk = {"choices": [{"delta": {"content": "he"}}]}
     ev = parse_sse_chunk(chunk)
