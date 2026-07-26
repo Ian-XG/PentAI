@@ -1,0 +1,17 @@
+# ~/.pentai/config.yaml  (copy from config.example.yaml)
+active: anthropic
+palette: green
+fx: true
+scope: []
+providers:
+  anthropic:
+    kind: anthropic
+    model: claude-opus-4
+  openai:
+    kind: openai_compat
+    model: gpt-4o
+    base_url: https://api.openai.com/v1
+  ollama:
+    kind: openai_compat
+    model: llama3
+    base_url: http://localhost:11434/v1
