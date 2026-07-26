@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from typing import Callable
 from ..scope import Scope
 from ..providers.base import Tool
+from ..permissions import should_prompt_exec, should_prompt_oos
 
 @dataclass
 class CommandResult:
@@ -15,13 +16,15 @@ def _subprocess_runner(command: str) -> CommandResult:
     return CommandResult(proc.stdout, proc.stderr, proc.returncode)
 
 def run_command(command: str, *, scope: Scope, confirm: Callable[[str], bool],
-                runner: Callable[[str], CommandResult] | None = None) -> str:
+                mode: str = "ask", runner: Callable[[str], CommandResult] | None = None) -> str:
     runner = runner or _subprocess_runner
     oos = scope.out_of_scope(command)
-    if oos and not confirm(f"OUT OF SCOPE: {', '.join(oos)}. You confirm you are authorized?"):
-        return "[cancelled: target out of authorized scope]"
-    if not confirm(f"execute: {command}"):
-        return "[cancelled by user]"
+    if oos and should_prompt_oos(mode):
+        if not confirm(f"OUT OF SCOPE: {', '.join(oos)}. You confirm you are authorized?"):
+            return "[cancelled: target out of authorized scope]"
+    if should_prompt_exec(mode):
+        if not confirm(f"execute: {command}"):
+            return "[cancelled by user]"
     result = runner(command)
     return f"exit_code={result.exit_code}\n--- stdout ---\n{result.stdout}\n--- stderr ---\n{result.stderr}"
 

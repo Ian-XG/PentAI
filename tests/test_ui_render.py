@@ -13,3 +13,7 @@ def test_status_bar_contents():
     assert "anthropic:claude-opus-4" in s
     assert "scope:2" in s
     assert "cmds:5" in s
+
+def test_status_bar_includes_mode():
+    s = status_bar("anthropic", "claude-opus-4", 2, 5, "bypass")
+    assert "mode:BYPASS" in s
