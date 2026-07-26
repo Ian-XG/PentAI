@@ -65,10 +65,30 @@ def run_wizard(prompt_fn: Callable[[str], str], print_fn: Callable[[str], None])
         api_key = prompt_fn(f"Paste your {choice.api_key_env}: ").strip() or None
     return build_config(choice, model=model, api_key=api_key, base_url=base_url)
 
+def merge_provider(base: dict | None, new: dict) -> dict:
+    """Merge a single-provider wizard config `new` into an existing config `base`,
+    preserving base's scope/palette/fx and other providers. `active` follows `new`."""
+    result: dict = dict(base) if base else {}
+    result.setdefault("palette", new.get("palette", "green"))
+    result.setdefault("fx", new.get("fx", True))
+    result.setdefault("scope", new.get("scope", []))
+    providers = dict(result.get("providers", {}))
+    providers.update(new.get("providers", {}))
+    result["providers"] = providers
+    result["active"] = new["active"]
+    return result
+
+def read_config_file(path: Path = DEFAULT_CONFIG_PATH) -> dict | None:
+    if not path.exists():
+        return None
+    return yaml.safe_load(path.read_text()) or None
+
 def save_config(cfg: dict, path: Path = DEFAULT_CONFIG_PATH) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(yaml.safe_dump(cfg, sort_keys=False))
-    path.chmod(0o600)
+    fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write(yaml.safe_dump(cfg, sort_keys=False))
+    path.chmod(0o600)  # ensure mode even if the file pre-existed
     return path
 
 def needs_onboarding(path: Path = DEFAULT_CONFIG_PATH, env: dict | None = None) -> bool:

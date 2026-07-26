@@ -61,3 +61,28 @@ def test_needs_onboarding_logic(tmp_path: Path):
     existing = tmp_path / "c.yaml"
     existing.write_text("active: anthropic\n")
     assert needs_onboarding(existing, env={}) is False
+
+def test_merge_provider_preserves_scope_and_other_providers():
+    from pentai.onboarding import merge_provider
+    base = {"active": "anthropic", "palette": "amber", "fx": False,
+            "scope": ["10.0.0.0/24"],
+            "providers": {"anthropic": {"kind": "anthropic", "model": "claude-opus-4"}}}
+    new = {"active": "ollama", "palette": "green", "fx": True, "scope": [],
+           "providers": {"ollama": {"kind": "openai_compat", "model": "llama3.1",
+                                    "base_url": "http://localhost:11434/v1"}}}
+    merged = merge_provider(base, new)
+    assert merged["active"] == "ollama"
+    assert merged["scope"] == ["10.0.0.0/24"]     # preserved
+    assert merged["palette"] == "amber"            # preserved
+    assert merged["fx"] is False                   # preserved
+    assert set(merged["providers"]) == {"anthropic", "ollama"}  # both kept
+
+def test_merge_provider_none_base_is_new():
+    from pentai.onboarding import merge_provider
+    new = {"active": "anthropic", "palette": "green", "fx": True, "scope": [],
+           "providers": {"anthropic": {"kind": "anthropic", "model": "m"}}}
+    assert merge_provider(None, new)["active"] == "anthropic"
+
+def test_read_config_file_missing_returns_none(tmp_path: Path):
+    from pentai.onboarding import read_config_file
+    assert read_config_file(tmp_path / "nope.yaml") is None
