@@ -4,7 +4,7 @@ from typing import Callable
 from prompt_toolkit import PromptSession
 from rich.console import Console
 from rich.markup import escape
-from .config import Config, load_config, default_config
+from .config import Config, load_config, load_config_file, default_config
 from .scope import Scope
 from .providers.factory import build_provider
 from .agent import Agent, ToolSpec, ToolInvocation
@@ -41,7 +41,7 @@ def main(argv: list[str] | None = None) -> int:
     fx = "--no-fx" not in argv
     console = Console()
     try:
-        cfg = load_config()
+        cfg = load_config_file()
     except Exception:
         cfg = default_config()
     palette = get_palette(cfg.palette)

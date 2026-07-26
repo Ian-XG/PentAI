@@ -49,9 +49,9 @@ export OPENAI_API_KEY=sk-...
 pentai
 ```
 
-By default PentAI is configured with an `anthropic` provider (`claude-opus-4`) and an `openai` provider (`gpt-4o` against the official OpenAI API), and reads the matching API key from the environment automatically.
+On startup, PentAI reads `~/.pentai/config.yaml` if it exists. If the file is missing (or empty), it falls back to built-in defaults: an `anthropic` provider (`claude-opus-4`) and an `openai` provider (`gpt-4o` against the official OpenAI API), each reading its matching API key from the environment automatically.
 
-`pentai/config.example.yaml` documents the full config schema used by `pentai.config.load_config` / `Config` / `ProviderConfig`, including how to point at other OpenAI-compatible backends such as Ollama or Groq and how to override which environment variable a provider reads its key from with the per-provider `api_key_env` field:
+To use another provider (Ollama, Groq, OpenRouter, or any other OpenAI-compatible backend), copy `pentai/config.example.yaml` to `~/.pentai/config.yaml` and edit it. `config.example.yaml` documents the full config schema used by `pentai.config.load_config` / `Config` / `ProviderConfig`, including how to point at other OpenAI-compatible backends such as Ollama or Groq and how to override which environment variable a provider reads its key from with the per-provider `api_key_env` field:
 
 ```yaml
 # ~/.pentai/config.yaml  (copy from config.example.yaml)

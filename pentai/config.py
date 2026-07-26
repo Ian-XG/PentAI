@@ -1,5 +1,7 @@
 import os
 from dataclasses import dataclass, field
+from pathlib import Path
+import yaml
 
 _ENV_KEYS = {"anthropic": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY"}
 
@@ -45,3 +47,14 @@ def load_config(data: dict | None = None, env: dict[str, str] | None = None) -> 
         if pc.api_key is None and key_env and env.get(key_env):
             pc.api_key = env[key_env]
     return cfg
+
+_DEFAULT_CONFIG_PATH = Path.home() / ".pentai" / "config.yaml"
+
+def load_config_file(path: Path | None = None, env: dict[str, str] | None = None) -> Config:
+    path = _DEFAULT_CONFIG_PATH if path is None else path
+    if not path.exists():
+        return load_config(None, env)
+    data = yaml.safe_load(path.read_text())
+    if not data:
+        return load_config(None, env)
+    return load_config(data, env)
