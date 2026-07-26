@@ -133,10 +133,10 @@ def main(argv: list[str] | None = None) -> int:
                 save_config(merged)
                 cfg = load_config_file()
                 scope = Scope(cfg.scope)
-                agent = build_agent(cfg, scope, confirm, session_dir)
+                agent = build_agent(cfg, scope, confirm, session_dir, lambda: mode_ref["mode"])
                 console.print("[ OK ] saved ~/.pentai/config.yaml", style=palette["accent"])
                 continue
-            if slash is not None and slash[0] == "mode":
+            if slash[0] == "mode":
                 mode_ref["mode"] = apply_mode_command(mode_ref["mode"], slash[1])
                 console.print(f"[ mode: {mode_ref['mode'].upper()} ]", style=palette["accent"])
                 continue
