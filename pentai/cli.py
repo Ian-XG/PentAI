@@ -5,6 +5,7 @@ from prompt_toolkit import PromptSession
 from rich.console import Console
 from rich.markup import escape
 from .config import Config, load_config, load_config_file, default_config
+from .onboarding import needs_onboarding, run_wizard, save_config, merge_provider, read_config_file
 from .scope import Scope
 from .providers.factory import build_provider
 from .agent import Agent, ToolSpec, ToolInvocation
@@ -36,10 +37,24 @@ def build_agent(cfg: Config, scope: Scope, confirm: Callable[[str], bool],
     }
     return Agent(provider, _SYSTEM_PROMPT, tools)
 
+def provider_ready(cfg: Config) -> bool:
+    pc = cfg.providers[cfg.active]
+    if pc.api_key:
+        return True
+    if pc.kind == "anthropic":
+        return False
+    if pc.api_key_env is None:
+        return True
+    return False
+
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     fx = "--no-fx" not in argv
     console = Console()
+    if needs_onboarding():
+        cfg_dict = run_wizard(lambda p: console.input(p, markup=False),
+                              lambda m: console.print(m))
+        save_config(cfg_dict)
     cfg_error: Exception | None = None
     try:
         cfg = load_config_file()
@@ -50,6 +65,11 @@ def main(argv: list[str] | None = None) -> int:
     if cfg_error is not None:
         console.print(f"[!] could not load config, using defaults: {cfg_error}",
                       style=palette["alert"], markup=False)
+    if not provider_ready(cfg):
+        pc = cfg.providers[cfg.active]
+        env_hint = pc.api_key_env or "the provider's API key env var"
+        console.print(f"[!] no API key for '{cfg.active}'. Run /setup, or set {env_hint}.",
+                      style=palette["alert"])
     if fx:
         for line in boot_lines():
             console.print(line, style=palette["dim"])
@@ -78,6 +98,16 @@ def main(argv: list[str] | None = None) -> int:
             result = handle_slash(*slash, scope=scope)
             if result == "__quit__":
                 break
+            if result == "__setup__":
+                wiz = run_wizard(lambda p: console.input(p, markup=False),
+                                 lambda m: console.print(m, style=palette["accent"]))
+                merged = merge_provider(read_config_file(), wiz)
+                save_config(merged)
+                cfg = load_config_file()
+                scope = Scope(cfg.scope)
+                agent = build_agent(cfg, scope, confirm, session_dir)
+                console.print("[ OK ] saved ~/.pentai/config.yaml", style=palette["accent"])
+                continue
             console.print(result, style=palette["accent"])
             continue
         try:

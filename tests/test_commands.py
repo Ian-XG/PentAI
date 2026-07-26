@@ -15,3 +15,13 @@ def test_quit_and_unknown():
     s = Scope([])
     assert handle_slash("quit", [], scope=s) == "__quit__"
     assert "unknown" in handle_slash("bogus", [], scope=s).lower()
+
+def test_setup_returns_sentinel():
+    from pentai.scope import Scope
+    from pentai.commands import handle_slash
+    assert handle_slash("setup", [], scope=Scope([])) == "__setup__"
+
+def test_help_lists_setup():
+    from pentai.scope import Scope
+    from pentai.commands import handle_slash
+    assert "/setup" in handle_slash("help", [], scope=Scope([]))
