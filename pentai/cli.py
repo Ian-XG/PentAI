@@ -53,7 +53,8 @@ def main(argv: list[str] | None = None) -> int:
     console = Console()
     if needs_onboarding():
         cfg_dict = run_wizard(lambda p: console.input(p, markup=False),
-                              lambda m: console.print(m))
+                              lambda m: console.print(m),
+                              secret_fn=lambda p: console.input(p, markup=False, password=True))
         save_config(cfg_dict)
     cfg_error: Exception | None = None
     try:
@@ -100,7 +101,8 @@ def main(argv: list[str] | None = None) -> int:
                 break
             if result == "__setup__":
                 wiz = run_wizard(lambda p: console.input(p, markup=False),
-                                 lambda m: console.print(m, style=palette["accent"]))
+                                 lambda m: console.print(m, style=palette["accent"]),
+                                 secret_fn=lambda p: console.input(p, markup=False, password=True))
                 merged = merge_provider(read_config_file(), wiz)
                 save_config(merged)
                 cfg = load_config_file()

@@ -86,3 +86,12 @@ def test_merge_provider_none_base_is_new():
 def test_read_config_file_missing_returns_none(tmp_path: Path):
     from pentai.onboarding import read_config_file
     assert read_config_file(tmp_path / "nope.yaml") is None
+
+def test_run_wizard_uses_secret_fn_for_key():
+    prompts = iter(["1", ""])   # choose anthropic, default model
+    secrets = []
+    cfg = run_wizard(lambda p: next(prompts),
+                     lambda m: None,
+                     secret_fn=lambda p: secrets.append(p) or "sk-secret")
+    assert cfg["providers"]["anthropic"]["api_key"] == "sk-secret"
+    assert secrets and "ANTHROPIC_API_KEY" in secrets[0]
