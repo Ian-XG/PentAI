@@ -409,19 +409,71 @@ git commit -m "feat: turn controller state machine (queue, stop, confirm routing
 
 ---
 
-### Task 4: Wire the full-screen app into the CLI (background turns, confirm, --classic fallback)
+### Task 4: Wire the full-screen app into the CLI (--tui opt-in; classic stays default)
 
 **Files:**
 - Modify: `pentai/cli.py`
 - Test: `tests/test_cli.py`
 
-**Outline (finalized when dispatched; the threading/asyncio glue is thin and smoke-verified):**
-- Rename the current `main()` loop to `main_classic()`. New `main(argv)` parses `--classic` (-> `main_classic()`), else launches the full-screen app.
-- Full-screen path reuses onboarding/config/scope/modes/toolcheck/build_agent. It creates an `OutputBuffer`, a `TurnController`, and a `build_app(...)`; `on_submit -> controller.submit`; `on_cycle_mode -> cycle mode_ref`; `on_stop -> controller.stop`; `get_status -> mode/scope/cmds/queued`.
-- `start_turn(text)` runs `agent.send(text)` in a background thread (`asyncio` `run_in_executor` via `app.loop`), appends each rendered event (rich -> `render_to_ansi`) to the OutputBuffer and `app.invalidate()`s from the loop thread, honors `controller.stopped` between events, and calls `controller.finish()` on completion.
-- ASK-mode confirm: the tool's confirm callback (running in the worker thread) uses `controller.request_confirm(...)` + a `threading.Event` to block until the user answers via the input box; AUTO/BYPASS never prompt.
-- Keep the boot (glitch/startup panel/toolcheck) before entering the app; guard so a non-TTY does not crash.
-- Smoke: `printf '/quit\n' | pentai` (full-screen path degrades or exits cleanly under non-TTY) and `pentai --classic` still runs the old loop. Since `/quit` should also work in the app, ensure a `/quit` submit exits. Paste both. Unit test: `main` dispatches to `main_classic` on `--classic` (monkeypatch/capture), keeping existing cli tests green.
+**Interfaces / behavior:**
+- Rename the current `main()` body to `main_classic(argv=None) -> int` (UNCHANGED behavior).
+- New `main(argv=None) -> int`: `argv = sys.argv[1:] if argv is None else argv`; if `"--tui"` in argv -> `return main_tui(argv)`; else `return main_classic(argv)`. So the DEFAULT `pentai` stays the classic REPL; `pentai --tui` opts into the full-screen app.
+- `main_tui(argv) -> int`: builds the full-screen app reusing the existing setup (onboarding via needs_onboarding/run_wizard/save_config; load_config_file/default_config; get_palette; Scope(cfg.scope); check_tools; build_agent with mode_getter + context_provider). It wires:
+  - `mode_ref = {"mode": "ask"}`, `cmds = counter`.
+  - `output = OutputBuffer()`; seed it with the startup panel + toolcheck rendered via `render_to_ansi(...)`.
+  - `controller = TurnController(start_turn=_start_turn)`.
+  - `app = build_app(output=output, on_submit=_on_submit, on_stop=controller.stop, on_cycle_mode=_cycle, get_status=_status)`.
+  - `_on_submit(text)`: if `text` starts with "/", handle it as a slash command (parse_slash/handle_slash): `/quit` -> `app.exit()`; `/mode` -> cycle/set via apply_mode_command; `__setup__`/`__clear__`/`__notes__`/`__report__`/`__tools__`/`__playbooks__` and `/scope` -> perform the action and append the rendered result to `output`; then `app.invalidate()`. Otherwise -> `controller.submit(text)`.
+  - `_start_turn(text)`: run `agent.send(text)` in a background thread (`threading.Thread`). For each event, marshal a UI update onto the app event loop with `app.loop.call_soon_threadsafe(...)`: append `render_to_ansi(...)` of the AI markdown / EXEC block to `output` and `app.invalidate()`. Stop iterating if `controller.stopped`. On completion, marshal `controller.finish()`.
+  - confirm (passed into build_agent's run_command): in ASK mode it must block the worker thread until the user answers in the box. Implement with a `threading.Event`: append a "[confirm] <prompt> [y/N]" line to output, `controller.request_confirm(cb)` (marshaled onto the loop), then `event.wait()`; the user's next `_on_submit` is routed by the controller as the yes/no answer, which sets the result and the event. AUTO/BYPASS never call confirm (run_command gates it).
+  - `_status()`: `f" mode:{mode_ref['mode'].upper()}  scope:{len(scope.entries)}  cmds:{cmds}  queued:{len(controller.queue)}  (shift+tab mode, esc stop, /quit)"`.
+  - Guard the whole `app.run()` so a non-TTY raises cleanly (catch the prompt_toolkit no-tty error and print a one-line hint to use `--classic`).
+
+- [ ] **Step 1: Write the failing test (append to tests/test_cli.py)**
+
+```python
+def test_main_defaults_to_classic(monkeypatch):
+    import pentai.cli as cli
+    calls = {}
+    monkeypatch.setattr(cli, "main_classic", lambda argv=None: calls.setdefault("classic", argv) or 0)
+    monkeypatch.setattr(cli, "main_tui", lambda argv: calls.setdefault("tui", argv) or 0)
+    cli.main([])
+    assert "classic" in calls and "tui" not in calls
+
+def test_main_tui_flag_dispatches_to_tui(monkeypatch):
+    import pentai.cli as cli
+    calls = {}
+    monkeypatch.setattr(cli, "main_classic", lambda argv=None: calls.setdefault("classic", argv) or 0)
+    monkeypatch.setattr(cli, "main_tui", lambda argv: calls.setdefault("tui", argv) or 0)
+    cli.main(["--tui"])
+    assert "tui" in calls and "classic" not in calls
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `python3 -m pytest tests/test_cli.py -v`
+Expected: FAIL (no main_tui / main dispatch).
+
+- [ ] **Step 3: Implement** the rename + `main` dispatcher + `main_tui` per the behavior above. Keep `main_classic` byte-for-byte the current `main` body. Reuse existing imports and helpers; add `import threading`, and `from .ui.app import build_app, OutputBuffer`, `from .ui.runner import TurnController`, `from .ui.tui_core import render_to_ansi`.
+
+- [ ] **Step 4: Verify - tests + import + smoke**
+
+Run: `python3 -m pytest -q` (all pass, incl. the 2 new dispatch tests) and `python3 -c "import pentai.cli"`.
+Smoke (both must exit cleanly, no traceback):
+```bash
+printf '/quit\n' | env HOME=$(mktemp -d) ANTHROPIC_API_KEY=sk-test python3 -m pentai --tui
+printf '/quit\n' | env HOME=$(mktemp -d) ANTHROPIC_API_KEY=sk-test python3 -m pentai
+```
+The `--tui` run under a pipe is non-TTY: it is acceptable for it to either run the app and exit on `/quit`, OR print a clean one-line "no TTY, use --classic" message - but it MUST NOT dump a traceback. The default run must still be the classic REPL. Paste both outputs. If the `--tui` non-TTY path dumps a traceback, wrap `app.run()` to catch it and print the hint.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add pentai/cli.py tests/test_cli.py
+git commit -m "feat: full-screen TUI wired behind --tui (background turns, queue, confirm); classic stays default"
+```
+
+Note for the controller: real agent-turn / confirm / queue behavior over a live provider cannot be validated headlessly - after this task the human runs `pentai --tui` to validate the interactive feel before the default is flipped.
 
 ---
 
