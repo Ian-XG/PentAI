@@ -83,7 +83,7 @@ def friendly_error(e: Exception) -> str:
 
 def session_context(scope_entries: list[str], mode: str, cwd: str,
                     tools: list[str] | None = None) -> str:
-    scope = ", ".join(scope_entries) if scope_entries else "(empty - tell the user to run /scope add <target>)"
+    scope = ", ".join(scope_entries) if scope_entries else "(none set)"
     lines = [f"--- session context ---",
              f"authorized scope: {scope}",
              f"permission mode: {mode}",

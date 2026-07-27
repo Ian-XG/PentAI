@@ -96,6 +96,13 @@ def test_session_context_without_tools_omits_line():
     ctx = session_context([], "ask", "/home/x")
     assert "installed tools" not in ctx.lower()
 
+def test_session_context_empty_scope_is_neutral():
+    from pentai.cli import session_context
+    ctx = session_context([], "ask", "/home/x")
+    assert "(none set)" in ctx
+    assert "/scope add" not in ctx           # no imperative in the context
+    assert "tell the user" not in ctx.lower()
+
 def test_main_defaults_to_tui(monkeypatch):
     import pentai.cli as cli
     calls = {}
