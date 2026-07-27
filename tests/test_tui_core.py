@@ -15,6 +15,10 @@ def test_render_to_ansi_accepts_theme():
     out = render_to_ansi(Markdown("# Title"), theme=markdown_theme(get_palette("green")))
     assert "Title" in out  # renders without error and includes the text
 
+def test_render_to_ansi_none_width_uses_terminal():
+    out = render_to_ansi("hello sizing")  # width=None -> real terminal width, must still render
+    assert "hello sizing" in out
+
 def test_turn_queue_fifo_and_blank():
     q = TurnQueue()
     q.enqueue("first"); q.enqueue("   "); q.enqueue("second")

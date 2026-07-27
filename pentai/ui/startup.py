@@ -24,7 +24,7 @@ def render_startup(console, *, palette, provider, model, playbooks, tools, modes
     body.add_row(Text("provider", style=dim), Text(f"{provider}:{model}", style=accent))
     body.add_row(Text("scope", style=dim), Text(str(scope_count), style=primary))
     body.add_row(Text("session", style=dim), Text(session_id, style=dim))
-    if console.width < 72:
+    if console.width < 90:
         layout = Table.grid()
         layout.add_column()
         layout.add_row(Text(SIGIL, style=accent))

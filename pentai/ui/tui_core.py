@@ -1,10 +1,12 @@
+import shutil
 from io import StringIO
 from rich.console import Console
 
-def render_to_ansi(renderable, width: int = 100, theme=None) -> str:
+def render_to_ansi(renderable, width: int | None = None, theme=None) -> str:
+    w = shutil.get_terminal_size((100, 24)).columns if width is None else width
     buf = StringIO()
     console = Console(file=buf, force_terminal=True, color_system="truecolor",
-                      width=width, soft_wrap=False, theme=theme)
+                      width=w, soft_wrap=False, theme=theme)
     console.print(renderable)
     return buf.getvalue()
 

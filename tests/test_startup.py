@@ -30,3 +30,16 @@ def test_render_startup_narrow_terminal_has_fields():
                    modes=["ask", "auto", "bypass"], scope_count=0, session_id="20260727_x")
     out = con.export_text()
     assert "PentAI" in out and "recon" in out and "20260727_x" in out
+
+def test_render_startup_80col_stacks_without_overflow():
+    from pentai.ui.startup import render_startup
+    from pentai.ui.theme import get_palette
+    from rich.console import Console
+    con = Console(record=True, width=80)
+    render_startup(con, palette=get_palette("green"), provider="ollama-cloud",
+                   model="gpt-oss:120b", playbooks=["recon", "web-owasp"], tools=["run_command"],
+                   modes=["ask", "auto", "bypass"], scope_count=0, session_id="20260727_x")
+    out = con.export_text()
+    assert "PentAI" in out and "recon" in out and "gpt-oss:120b" in out
+    # no line should exceed the console width (no overflow)
+    assert all(len(line) <= 80 for line in out.splitlines())

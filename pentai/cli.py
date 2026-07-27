@@ -296,12 +296,14 @@ def main_classic(argv: list[str] | None = None) -> int:
     console.print("bye", style=palette["dim"])
     return 0
 
-def _capture_console(render_fn: Callable[[Console], None], width: int = 100) -> str:
+def _capture_console(render_fn: Callable[[Console], None], width: int | None = None) -> str:
     """Like render_to_ansi, but for helpers (render_startup/render_toolcheck) that
     print onto a Console they're handed rather than returning a renderable."""
+    import shutil
+    w = shutil.get_terminal_size((100, 24)).columns if width is None else width
     buf = StringIO()
     console = Console(file=buf, force_terminal=True, color_system="truecolor",
-                      width=width, soft_wrap=False)
+                      width=w, soft_wrap=False)
     render_fn(console)
     return buf.getvalue()
 
