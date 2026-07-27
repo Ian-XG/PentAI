@@ -41,3 +41,27 @@ def test_app_cycle_mode_key_headless():
         inp.send_text("\x03")    # Ctrl-C -> exit
         app.run()
     assert cycles == [1]
+
+
+def test_output_buffer_visible_tail_and_offset():
+    b = OutputBuffer()
+    b.append("\n".join(str(i) for i in range(10)))  # lines "0".."9"
+    assert b.visible(3, 0) == "7\n8\n9"       # bottom 3 (follow)
+    assert b.visible(3, 3) == "4\n5\n6"       # scrolled up 3
+    assert b.visible(100, 0) == b.text()      # fits -> full text
+    assert b.line_count() == 10
+
+
+def test_app_pageup_then_end_headless():
+    from prompt_toolkit.input.defaults import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+    out = OutputBuffer()
+    out.append("\n".join(str(i) for i in range(200)))  # long content
+    with create_pipe_input() as inp:
+        app = build_app(output=out, on_submit=lambda t: None, on_stop=lambda: None,
+                        on_cycle_mode=lambda: None, get_status=lambda: "s",
+                        pt_input=inp, pt_output=DummyOutput())
+        inp.send_text("\x1b[5~")   # PageUp
+        inp.send_text("\x1b[F")    # End (jump to bottom)
+        inp.send_text("\x03")      # Ctrl-C exit
+        app.run()
