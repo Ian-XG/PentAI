@@ -105,19 +105,157 @@ git commit -m "feat: TUI core - rich-to-ANSI capture and turn queue"
 
 ---
 
-### Task 2: The full-screen app shell (layout + key bindings), construction-tested
+### Task 2: The full-screen app shell (layout + key bindings), headless-tested
 
 **Files:**
 - Create: `pentai/ui/app.py`
 - Test: `tests/test_app.py`
 
-**Outline (to be finalized against prompt_toolkit 3.0.52 when implemented):**
-- `build_app(*, on_submit, on_stop, on_cycle_mode, get_status, output_control) -> Application`:
-  - Layout: a scrollable `Window(FormattedTextControl(get_output))` output region; a bordered input via `Frame(TextArea(prompt="> ", multiline=False, accept_handler=...))`; a bottom status line from `get_status()`.
-  - Key bindings: Enter -> `on_submit(text)` and clear the input; `s-tab` -> `on_cycle_mode()`; `escape` -> `on_stop()`; `c-c`/`c-d` -> exit.
-  - `full_screen=True`.
-- An `OutputBuffer` helper holding the accumulated ANSI text with `append(ansi: str)` and a `text()` accessor used by the FormattedTextControl (wrapped with prompt_toolkit `ANSI`).
-- Tests (no event loop): `build_app(...)` returns an `Application`; invoking the input accept-handler with a fake buffer calls `on_submit` with the text; `OutputBuffer.append` accumulates and `text()` returns it. Assert the status callback is wired.
+**Interfaces:**
+- Produces:
+  - `class OutputBuffer` - holds accumulated ANSI text: `append(ansi: str)`, `text() -> str`, `clear()`.
+  - `build_app(*, output: OutputBuffer, on_submit: Callable[[str], None], on_stop: Callable[[], None], on_cycle_mode: Callable[[], None], get_status: Callable[[], str], pt_input=None, pt_output=None) -> Application` - a full-screen prompt_toolkit Application: a scrollable output `Window` showing `ANSI(output.text())`, a bordered input `Frame(TextArea(prompt="> ", multiline=False))` whose accept-handler calls `on_submit(text)` then clears the input, and a one-line status `Window` from `get_status()`. Key bindings: Enter submits (via the TextArea accept-handler); `s-tab` -> `on_cycle_mode()` + invalidate; `escape` (eager) -> `on_stop()`; `c-c`/`c-d` -> exit. `pt_input`/`pt_output` are passed to `Application(input=, output=)` for headless testing.
+
+- [ ] **Step 1: Write the failing test**
+
+```python
+# tests/test_app.py
+from prompt_toolkit.input.defaults import create_pipe_input
+from prompt_toolkit.output import DummyOutput
+from pentai.ui.app import build_app, OutputBuffer
+
+def test_output_buffer_accumulates():
+    b = OutputBuffer()
+    b.append("a"); b.append("b")
+    assert b.text() == "ab"
+    b.clear()
+    assert b.text() == ""
+
+def test_app_submit_then_exit_headless():
+    submitted = []
+    out = OutputBuffer()
+    with create_pipe_input() as inp:
+        app = build_app(output=out,
+                        on_submit=lambda t: submitted.append(t),
+                        on_stop=lambda: None,
+                        on_cycle_mode=lambda: None,
+                        get_status=lambda: "mode:ASK",
+                        pt_input=inp, pt_output=DummyOutput())
+        inp.send_text("hello there\r")  # type + Enter -> submit
+        inp.send_text("\x03")           # Ctrl-C -> exit
+        app.run()
+    assert submitted == ["hello there"]
+
+def test_app_cycle_mode_key_headless():
+    cycles = []
+    with create_pipe_input() as inp:
+        app = build_app(output=OutputBuffer(),
+                        on_submit=lambda t: None,
+                        on_stop=lambda: None,
+                        on_cycle_mode=lambda: cycles.append(1),
+                        get_status=lambda: "s",
+                        pt_input=inp, pt_output=DummyOutput())
+        inp.send_text("\x1b[Z")  # shift-tab
+        inp.send_text("\x03")    # Ctrl-C -> exit
+        app.run()
+    assert cycles == [1]
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `python3 -m pytest tests/test_app.py -v`
+Expected: FAIL (no module).
+
+- [ ] **Step 3: Implement `pentai/ui/app.py`**
+
+```python
+from typing import Callable
+from prompt_toolkit import Application
+from prompt_toolkit.buffer import Buffer
+from prompt_toolkit.formatted_text import ANSI
+from prompt_toolkit.key_binding import KeyBindings
+from prompt_toolkit.layout import Layout, HSplit, Window
+from prompt_toolkit.layout.controls import FormattedTextControl
+from prompt_toolkit.widgets import Frame, TextArea
+
+
+class OutputBuffer:
+    def __init__(self) -> None:
+        self._text = ""
+
+    def append(self, ansi: str) -> None:
+        self._text += ansi
+
+    def text(self) -> str:
+        return self._text
+
+    def clear(self) -> None:
+        self._text = ""
+
+
+def build_app(*, output: OutputBuffer,
+              on_submit: Callable[[str], None],
+              on_stop: Callable[[], None],
+              on_cycle_mode: Callable[[], None],
+              get_status: Callable[[], str],
+              pt_input=None, pt_output=None) -> Application:
+
+    def accept(buff: Buffer) -> bool:
+        text = buff.text
+        on_submit(text)
+        return False  # clear the input after submit
+
+    input_area = TextArea(prompt="> ", multiline=False, accept_handler=accept)
+    input_frame = Frame(input_area, title="message")
+
+    output_window = Window(
+        content=FormattedTextControl(lambda: ANSI(output.text()), focusable=False),
+        wrap_lines=True,
+    )
+    status_window = Window(
+        content=FormattedTextControl(lambda: get_status()),
+        height=1,
+    )
+
+    root = HSplit([output_window, input_frame, status_window])
+
+    kb = KeyBindings()
+
+    @kb.add("c-c")
+    @kb.add("c-d")
+    def _(event) -> None:
+        event.app.exit()
+
+    @kb.add("s-tab")
+    def _(event) -> None:
+        on_cycle_mode()
+        event.app.invalidate()
+
+    @kb.add("escape", eager=True)
+    def _(event) -> None:
+        on_stop()
+
+    return Application(
+        layout=Layout(root, focused_element=input_area),
+        key_bindings=kb,
+        full_screen=True,
+        mouse_support=False,
+        input=pt_input,
+        output=pt_output,
+    )
+```
+
+- [ ] **Step 4: Run tests to verify they pass**
+
+Run: `python3 -m pytest tests/test_app.py -v` then full `python3 -m pytest -q`.
+Expected: PASS. If a prompt_toolkit API detail differs in 3.0.52 (e.g. accept_handler return semantics, shift-tab escape sequence, or Application input/output kwargs), adjust minimally to make the headless tests pass - the tests are the contract. Also `python3 -c "import pentai.ui.app"`.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add pentai/ui/app.py tests/test_app.py
+git commit -m "feat: full-screen app shell (bordered input, output region, key bindings)"
+```
 
 ---
 
