@@ -1,7 +1,9 @@
 import os
 import socket
 import sys
+import threading
 import time
+from io import StringIO
 from pathlib import Path
 import httpx
 from typing import Callable
@@ -30,6 +32,9 @@ from .ui.animations import run_once, glitch_frames
 from .ui.banner import boot_lines, SIGIL
 from .ui.startup import render_startup, render_toolcheck
 from .ui.render import markdown_theme
+from .ui.app import build_app, OutputBuffer
+from .ui.runner import TurnController
+from .ui.tui_core import render_to_ansi
 
 _SKILLS_DIR = Path(__file__).parent / "skills"
 _SYSTEM_PROMPT = (Path(__file__).parent / "prompts" / "system.md").read_text()
@@ -122,7 +127,7 @@ def provider_ready(cfg: Config) -> bool:
         return True
     return False
 
-def main(argv: list[str] | None = None) -> int:
+def main_classic(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     fx = "--no-fx" not in argv
     console = Console()
@@ -290,3 +295,212 @@ def main(argv: list[str] | None = None) -> int:
             spinner_stop["fn"] = lambda: None
     console.print("bye", style=palette["dim"])
     return 0
+
+def _capture_console(render_fn: Callable[[Console], None], width: int = 100) -> str:
+    """Like render_to_ansi, but for helpers (render_startup/render_toolcheck) that
+    print onto a Console they're handed rather than returning a renderable."""
+    buf = StringIO()
+    console = Console(file=buf, force_terminal=True, color_system="truecolor",
+                      width=width, soft_wrap=False)
+    render_fn(console)
+    return buf.getvalue()
+
+def main_tui(argv: list[str]) -> int:
+    console = Console()
+    session_id = time.strftime("%Y%m%d_%H%M%S")
+    if needs_onboarding():
+        cfg_dict = run_wizard(lambda p: console.input(p, markup=False),
+                              lambda m: console.print(m),
+                              secret_fn=lambda p: console.input(p, markup=False, password=True))
+        save_config(cfg_dict)
+    cfg_error: Exception | None = None
+    try:
+        cfg = load_config_file()
+    except Exception as e:
+        cfg_error = e
+        cfg = default_config()
+    palette = get_palette(cfg.palette)
+
+    _tool_results = check_tools()
+    installed_tools = [name for name, ok in _tool_results if ok]
+    scope = Scope(cfg.scope)
+    session_dir = Path.home() / ".pentai" / "session"
+
+    output = OutputBuffer()
+    if cfg_error is not None:
+        output.append(render_to_ansi(Text(
+            f"[!] could not load config, using defaults: {cfg_error}", style=palette["alert"])))
+    if not provider_ready(cfg):
+        pc = cfg.providers[cfg.active]
+        env_hint = pc.api_key_env or "the provider's API key env var"
+        output.append(render_to_ansi(Text(
+            f"[!] no API key for '{cfg.active}'. Run /setup, or set {env_hint}.", style=palette["alert"])))
+    output.append(_capture_console(lambda c: render_startup(
+        c, palette=palette, provider=cfg.active, model=cfg.providers[cfg.active].model,
+        playbooks=list_playbooks(_SKILLS_DIR), tools=AGENT_TOOL_NAMES, modes=MODES,
+        scope_count=len(cfg.scope), session_id=session_id)))
+    output.append(_capture_console(lambda c: render_toolcheck(c, palette, _tool_results)))
+
+    mode_ref = {"mode": "ask"}
+    cmds_ref = {"n": 0}
+
+    def _run_on_loop(fn: Callable[[], None]) -> None:
+        app.loop.call_soon_threadsafe(fn)
+
+    def _post(chunk: str) -> None:
+        def _append() -> None:
+            output.append(chunk)
+            app.invalidate()
+        _run_on_loop(_append)
+
+    def _confirm(prompt: str) -> bool:
+        # Blocks the WORKER thread (this runs inside run_command, called from
+        # _start_turn's background thread) until the user answers in the input
+        # box. The answer is routed back by _on_submit -> controller.submit,
+        # which detects controller.awaiting_confirm and calls this callback.
+        event = threading.Event()
+        answer = {"v": False}
+        def on_answer(yes: bool) -> None:
+            answer["v"] = yes
+            event.set()
+        def _ask() -> None:
+            output.append(render_to_ansi(Text(f"[confirm] {prompt} [y/N]", style=palette["accent"])))
+            controller.request_confirm(on_answer)
+            app.invalidate()
+        _run_on_loop(_ask)
+        event.wait()
+        return answer["v"]
+
+    agent = build_agent(cfg, scope, _confirm, session_dir, lambda: mode_ref["mode"],
+                        context_provider=lambda: session_context(scope.entries, mode_ref["mode"], os.getcwd(), installed_tools))
+
+    def _start_turn(text: str) -> None:
+        def worker() -> None:
+            buf: list[str] = []
+            def flush() -> None:
+                if buf:
+                    chunk = render_to_ansi(Markdown("".join(buf)))
+                    buf.clear()
+                    _post(chunk)
+            try:
+                for ev in agent.send(text):
+                    if controller.stopped:
+                        break
+                    if isinstance(ev, TextDelta):
+                        buf.append(ev.text)
+                    elif isinstance(ev, ToolInvocation):
+                        flush()
+                        cmds_ref["n"] += 1
+                        cmd = ev.arguments.get("command", ev.arguments)
+                        _post(render_to_ansi(Text(f"[EXEC] {cmd}", style=palette["accent"])) +
+                              render_to_ansi(Text(str(ev.result), style=palette["dim"])))
+            except Exception as e:
+                flush()
+                _post(render_to_ansi(Text(f"[!] {friendly_error(e)}", style=palette["alert"])))
+            else:
+                flush()
+            finally:
+                def _done() -> None:
+                    controller.finish()
+                    app.invalidate()
+                _run_on_loop(_done)
+        threading.Thread(target=worker, daemon=True).start()
+
+    controller = TurnController(start_turn=_start_turn)
+
+    def _on_submit(text: str) -> None:
+        text = text.strip()
+        if not text:
+            return
+        if controller.awaiting_confirm:
+            controller.submit(text)
+            app.invalidate()
+            return
+        if text.startswith("/"):
+            slash = parse_slash(text)
+            if slash is None:
+                return
+            cmd, args = slash
+            if cmd == "mode":
+                mode_ref["mode"] = apply_mode_command(mode_ref["mode"], args)
+                output.append(render_to_ansi(Text(f"[ mode: {mode_ref['mode'].upper()} ]", style=palette["accent"])))
+                app.invalidate()
+                return
+            result = handle_slash(cmd, args, scope=scope)
+            if result == "__quit__":
+                app.exit()
+                return
+            if result == "__setup__":
+                # The interactive wizard uses blocking console.input() calls that
+                # would deadlock the full-screen event loop, so it's not run here.
+                output.append(render_to_ansi(Text(
+                    "setup wizard is not available in --tui mode; run 'pentai --classic' then /setup",
+                    style=palette["alert"])))
+                app.invalidate()
+                return
+            if result == "__clear__":
+                output.clear()
+                app.invalidate()
+                return
+            if result == "__notes__":
+                notes = session_dir / "notes.md"
+                if notes.exists():
+                    output.append(render_to_ansi(Markdown(notes.read_text())))
+                else:
+                    output.append(render_to_ansi(Text("[no notes yet]", style=palette["dim"])))
+                app.invalidate()
+                return
+            if result == "__report__":
+                notes = session_dir / "notes.md"
+                if notes.exists():
+                    output.append(render_to_ansi(Markdown("# PentAI Session Report\n\n" + notes.read_text())))
+                else:
+                    output.append(render_to_ansi(Text(
+                        "[no findings recorded yet - the agent saves them with save_note]",
+                        style=palette["dim"])))
+                app.invalidate()
+                return
+            if result == "__tools__":
+                output.append(_capture_console(lambda c: render_toolcheck(c, palette, _tool_results)))
+                output.append(render_to_ansi(Text("agent tools: " + ", ".join(AGENT_TOOL_NAMES), style=palette["dim"])))
+                app.invalidate()
+                return
+            if result == "__playbooks__":
+                if args:
+                    output.append(render_to_ansi(Markdown(load_playbook(args[0], skills_dir=_SKILLS_DIR))))
+                else:
+                    names = list_playbooks(_SKILLS_DIR)
+                    output.append(render_to_ansi(Text("playbooks: " + ", ".join(names), style=palette["accent"])))
+                app.invalidate()
+                return
+            output.append(render_to_ansi(Text(result, style=palette["accent"])))
+            app.invalidate()
+            return
+        controller.submit(text)
+
+    def _cycle_mode() -> None:
+        mode_ref["mode"] = next_mode(mode_ref["mode"])
+
+    def _status() -> str:
+        return (f" mode:{mode_ref['mode'].upper()}  scope:{len(scope.entries)}  "
+                f"cmds:{cmds_ref['n']}  queued:{len(controller.queue)}  (shift+tab mode, esc stop, /quit)")
+
+    app = build_app(output=output, on_submit=_on_submit, on_stop=controller.stop,
+                    on_cycle_mode=_cycle_mode, get_status=_status)
+
+    try:
+        app.run()
+    except EOFError:
+        pass
+    except KeyboardInterrupt:
+        pass
+    except Exception as e:
+        # prompt_toolkit's full-screen mode needs a real tty; under a pipe/non-tty
+        # it can raise (rather than degrade like the classic PromptSession does).
+        # Fail soft instead of dumping a traceback.
+        print(f"[!] --tui needs an interactive terminal ({e}); use --classic instead")
+    return 0
+
+def main(argv: list[str] | None = None) -> int:
+    argv = sys.argv[1:] if argv is None else argv
+    return main_tui(argv) if "--tui" in argv else main_classic(argv)
