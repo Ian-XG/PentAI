@@ -18,12 +18,13 @@ from .agent import Agent, ToolSpec, ToolInvocation
 from .providers.base import TextDelta
 from .tools.shell import run_command, RUN_COMMAND_TOOL
 from .tools.notes import save_note, SAVE_NOTE_TOOL
-from .tools.playbooks import load_playbook, LOAD_PLAYBOOK_TOOL
+from .tools.playbooks import load_playbook, LOAD_PLAYBOOK_TOOL, list_playbooks
 from .commands import parse_slash, handle_slash
 from .permissions import MODES, next_mode
 from .ui.theme import get_palette
 from .ui.animations import run_once, glitch_frames
 from .ui.banner import render_banner, boot_lines, SIGIL
+from .ui.startup import render_startup
 from .ui.render import status_bar, markdown_theme
 
 _SKILLS_DIR = Path(__file__).parent / "skills"
@@ -97,6 +98,7 @@ def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     fx = "--no-fx" not in argv
     console = Console()
+    session_id = time.strftime("%Y%m%d_%H%M%S")
     if needs_onboarding():
         cfg_dict = run_wizard(lambda p: console.input(p, markup=False),
                               lambda m: console.print(m),
@@ -122,7 +124,11 @@ def main(argv: list[str] | None = None) -> int:
         for line in boot_lines():
             console.print(line, style=palette["dim"])
         _play_sigil_glitch(console, palette)
-    console.print(render_banner(palette, simple=not fx), style=palette["primary"])
+    render_startup(console, palette=palette, provider=cfg.active,
+                   model=cfg.providers[cfg.active].model,
+                   playbooks=list_playbooks(_SKILLS_DIR),
+                   tools=["run_command", "save_note", "load_playbook"],
+                   modes=MODES, scope_count=len(cfg.scope), session_id=session_id)
 
     scope = Scope(cfg.scope)
     session_dir = Path.home() / ".pentai" / "session"
