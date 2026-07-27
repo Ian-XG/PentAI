@@ -4,6 +4,7 @@ _HELP = ("commands: /scope add <target>, /scope list, /setup, /mode [ask|auto|by
          "/clear, /notes, /report, /tools, /playbooks [name], /help, /quit")
 
 def parse_slash(line: str) -> tuple[str, list[str]] | None:
+    line = line.strip()
     if not line.startswith("/"):
         return None
     parts = line[1:].split()
