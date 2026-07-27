@@ -12,3 +12,14 @@ def test_system_prompt_mentions_ethics():
 def test_four_playbooks_present():
     names = list_playbooks(PKG / "skills")
     assert set(names) == {"recon", "web-owasp", "priv-esc", "reporting"}
+
+def test_system_prompt_is_action_biased():
+    text = (PKG / "prompts" / "system.md").read_text().lower()
+    # must push tool use over describing
+    assert "call" in text and "tool" in text
+    assert "do not print" in text or "never print" in text
+    # must know it receives scope/mode context and guide /scope add
+    assert "/scope add" in text
+    assert "mode" in text
+    # still ethical
+    assert "authorized" in text

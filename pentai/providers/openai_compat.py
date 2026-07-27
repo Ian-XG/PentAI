@@ -45,6 +45,7 @@ def parse_sse_chunk(data: dict) -> Event | None:
 
 def _httpx_poster(url: str, headers: dict, json: dict) -> Iterator[str]:
     with httpx.stream("POST", url, headers=headers, json=json, timeout=None) as resp:
+        resp.raise_for_status()
         for line in resp.iter_lines():
             yield line
 

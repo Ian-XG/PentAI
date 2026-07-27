@@ -39,6 +39,20 @@ def test_send_passes_system_prompt():
     list(agent.send("hi"))
     assert prov.last_system == "SYSPROMPT"
 
+def test_send_appends_context_to_system():
+    from pentai.providers.base import Message, TextDelta, Done
+    from pentai.agent import Agent
+    class CapturingProvider:
+        def __init__(self): self.system = None
+        def chat(self, messages, tools, system=""):
+            self.system = system
+            yield TextDelta("ok"); yield Done("end")
+    prov = CapturingProvider()
+    agent = Agent(prov, "BASE PROMPT", {}, context_provider=lambda: "SCOPE: 10.0.0.0/24")
+    list(agent.send("hi"))
+    assert "BASE PROMPT" in prov.system
+    assert "SCOPE: 10.0.0.0/24" in prov.system
+
 class LoopingProvider:
     """Always returns a tool call, never terminates on its own."""
     def __init__(self):

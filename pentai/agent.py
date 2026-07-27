@@ -18,21 +18,26 @@ AgentEvent = TextDelta | ToolInvocation
 
 class Agent:
     def __init__(self, provider: Provider, system_prompt: str,
-                 tools: dict[str, ToolSpec], history: list[Message] | None = None):
+                 tools: dict[str, ToolSpec], history: list[Message] | None = None,
+                 context_provider: Callable[[], str] | None = None):
         self.provider = provider
         self.system_prompt = system_prompt
         self.tools = tools
         self.history: list[Message] = history if history is not None else []
         self._tool_defs: list[Tool] = [s.tool for s in tools.values()]
+        self.context_provider = context_provider
 
     MAX_ITERATIONS = 25
 
     def send(self, user_text: str) -> Iterator[AgentEvent]:
         self.history.append(Message("user", user_text))
+        system = self.system_prompt
+        if self.context_provider is not None:
+            system = f"{system}\n\n{self.context_provider()}"
         for _ in range(self.MAX_ITERATIONS):
             text_parts: list[str] = []
             pending: list[ToolCall] = []
-            for ev in self.provider.chat(self.history, self._tool_defs, self.system_prompt):
+            for ev in self.provider.chat(self.history, self._tool_defs, system):
                 if isinstance(ev, TextDelta):
                     text_parts.append(ev.text)
                     yield ev

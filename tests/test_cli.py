@@ -69,3 +69,18 @@ def test_build_agent_tools_match_startup_list(tmp_path):
     cfg = Config(active="a", providers={"a": ProviderConfig("anthropic", "m", "k")})
     agent = build_agent(cfg, Scope([]), confirm=lambda p: True, session_dir=tmp_path)
     assert set(agent.tools) == set(AGENT_TOOL_NAMES)
+
+def test_friendly_error_connection():
+    import socket
+    from pentai.cli import friendly_error
+    msg = friendly_error(socket.gaierror(8, "nodename nor servname provided, or not known"))
+    assert "provider" in msg.lower()
+    assert "8" not in msg or "provider" in msg.lower()  # not a raw errno dump
+
+def test_friendly_error_auth():
+    from pentai.cli import friendly_error
+    assert "api key" in friendly_error(Exception("HTTP 401 Unauthorized")).lower()
+
+def test_friendly_error_generic():
+    from pentai.cli import friendly_error
+    assert "boom" in friendly_error(Exception("boom"))
