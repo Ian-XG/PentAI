@@ -24,10 +24,11 @@ from .tools.notes import save_note, SAVE_NOTE_TOOL
 from .tools.playbooks import load_playbook, LOAD_PLAYBOOK_TOOL, list_playbooks
 from .commands import parse_slash, handle_slash
 from .permissions import MODES, next_mode
+from .toolcheck import check_tools
 from .ui.theme import get_palette
 from .ui.animations import run_once, glitch_frames
 from .ui.banner import boot_lines, SIGIL
-from .ui.startup import render_startup
+from .ui.startup import render_startup, render_toolcheck
 from .ui.render import markdown_theme
 
 _SKILLS_DIR = Path(__file__).parent / "skills"
@@ -75,12 +76,16 @@ def friendly_error(e: Exception) -> str:
         return "the AI provider rejected the request (auth). Check your API key with /setup."
     return f"error: {msg}"
 
-def session_context(scope_entries: list[str], mode: str, cwd: str) -> str:
+def session_context(scope_entries: list[str], mode: str, cwd: str,
+                    tools: list[str] | None = None) -> str:
     scope = ", ".join(scope_entries) if scope_entries else "(empty - tell the user to run /scope add <target>)"
-    return (f"--- session context ---\n"
-            f"authorized scope: {scope}\n"
-            f"permission mode: {mode}\n"
-            f"working directory: {cwd}")
+    lines = [f"--- session context ---",
+             f"authorized scope: {scope}",
+             f"permission mode: {mode}",
+             f"working directory: {cwd}"]
+    if tools:
+        lines.append(f"installed tools: {', '.join(tools)}")
+    return "\n".join(lines)
 
 def build_agent(cfg: Config, scope: Scope, confirm: Callable[[str], bool],
                 session_dir: Path, mode_getter: Callable[[], str] = lambda: "ask",
@@ -152,6 +157,9 @@ def main(argv: list[str] | None = None) -> int:
                    playbooks=list_playbooks(_SKILLS_DIR),
                    tools=AGENT_TOOL_NAMES,
                    modes=MODES, scope_count=len(cfg.scope), session_id=session_id)
+    _tool_results = check_tools()
+    render_toolcheck(console, palette, _tool_results)
+    installed_tools = [name for name, ok in _tool_results if ok]
 
     scope = Scope(cfg.scope)
     session_dir = Path.home() / ".pentai" / "session"
@@ -183,7 +191,7 @@ def main(argv: list[str] | None = None) -> int:
         return base
 
     agent = build_agent(cfg, scope, confirm, session_dir, mode_getter,
-                        context_provider=lambda: session_context(scope.entries, mode_ref["mode"], os.getcwd()))
+                        context_provider=lambda: session_context(scope.entries, mode_ref["mode"], os.getcwd(), installed_tools))
     session: PromptSession = PromptSession(key_bindings=kb, bottom_toolbar=bottom_toolbar)
     while True:
         try:
@@ -212,7 +220,7 @@ def main(argv: list[str] | None = None) -> int:
                 console.push_theme(markdown_theme(palette))
                 scope = Scope(cfg.scope)
                 agent = build_agent(cfg, scope, confirm, session_dir, mode_getter,
-                                    context_provider=lambda: session_context(scope.entries, mode_ref["mode"], os.getcwd()))
+                                    context_provider=lambda: session_context(scope.entries, mode_ref["mode"], os.getcwd(), installed_tools))
                 console.print("[ OK ] saved ~/.pentai/config.yaml", style=palette["accent"])
                 continue
             console.print(result, style=palette["accent"])

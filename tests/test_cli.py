@@ -84,3 +84,14 @@ def test_friendly_error_auth():
 def test_friendly_error_generic():
     from pentai.cli import friendly_error
     assert "boom" in friendly_error(Exception("boom"))
+
+def test_session_context_includes_installed_tools():
+    from pentai.cli import session_context
+    ctx = session_context(["10.0.0.0/24"], "ask", "/home/x", tools=["nmap", "curl"])
+    assert "nmap, curl" in ctx
+    assert "10.0.0.0/24" in ctx and "ask" in ctx
+
+def test_session_context_without_tools_omits_line():
+    from pentai.cli import session_context
+    ctx = session_context([], "ask", "/home/x")
+    assert "installed tools" not in ctx.lower()

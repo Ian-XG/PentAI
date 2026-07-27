@@ -30,3 +30,13 @@ def render_startup(console, *, palette, provider, model, playbooks, tools, modes
     layout.add_row(Text(SIGIL, style=accent), body)
     console.print(Panel(layout, border_style=accent,
                         title="[ authorized use only ]", title_align="left"))
+
+def render_toolcheck(console, palette, results) -> None:
+    accent = palette["accent"]
+    dim = palette["dim"]
+    parts = []
+    for name, available in results:
+        mark = "✓" if available else "✗"
+        style = accent if available else dim
+        parts.append(f"[{style}]{mark} {name}[/]")
+    console.print("tools  " + "  ".join(parts), style=dim)
