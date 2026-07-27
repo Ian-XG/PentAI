@@ -1,4 +1,5 @@
 import os
+import shutil
 import socket
 import sys
 import threading
@@ -424,9 +425,11 @@ def main_tui(argv: list[str]) -> int:
         text = text.strip()
         if not text:
             return
+        _w = shutil.get_terminal_size((100, 24)).columns
+        _line = f" > {text}".ljust(_w)
         output.append(render_to_ansi(
-            Text(f" > {text} ", style=f"bold black on {palette['accent']}"),
-            theme=markdown_theme(palette)))
+            Text(_line, style=f"bold black on {palette['accent']}"),
+            width=_w, theme=markdown_theme(palette)))
         app.invalidate()
         if controller.awaiting_confirm:
             controller.submit(text)
