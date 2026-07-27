@@ -1,4 +1,5 @@
 import sys
+import time
 from pathlib import Path
 from typing import Callable
 from prompt_toolkit import PromptSession
@@ -7,6 +8,8 @@ from prompt_toolkit.formatted_text import HTML
 from rich.console import Console
 from rich.markup import escape
 from rich.markdown import Markdown
+from rich.live import Live
+from rich.text import Text
 from .config import Config, load_config, load_config_file, default_config
 from .onboarding import needs_onboarding, run_wizard, save_config, merge_provider, read_config_file
 from .scope import Scope
@@ -19,11 +22,21 @@ from .tools.playbooks import load_playbook, LOAD_PLAYBOOK_TOOL
 from .commands import parse_slash, handle_slash
 from .permissions import MODES, next_mode
 from .ui.theme import get_palette
-from .ui.banner import render_banner, boot_lines
+from .ui.animations import run_once, glitch_frames
+from .ui.banner import render_banner, boot_lines, SIGIL
 from .ui.render import status_bar, markdown_theme
 
 _SKILLS_DIR = Path(__file__).parent / "skills"
 _SYSTEM_PROMPT = (Path(__file__).parent / "prompts" / "system.md").read_text()
+
+def _play_sigil_glitch(console, palette) -> None:
+    try:
+        with Live(console=console, refresh_per_second=20, transient=True) as live:
+            for frame in glitch_frames(SIGIL, frames=6):
+                live.update(Text(frame, style=palette["accent"]))
+                time.sleep(0.05)
+    except Exception:
+        pass
 
 def stream_turn(events, render_text, render_tool, render_error) -> None:
     """Consume agent events, buffering text and flushing it as one block before
@@ -108,13 +121,17 @@ def main(argv: list[str] | None = None) -> int:
     if fx:
         for line in boot_lines():
             console.print(line, style=palette["dim"])
+        _play_sigil_glitch(console, palette)
     console.print(render_banner(palette, simple=not fx), style=palette["primary"])
 
     scope = Scope(cfg.scope)
     session_dir = Path.home() / ".pentai" / "session"
     cmds = 0
 
+    spinner_stop: dict = {"fn": lambda: None}
+
     def confirm(prompt: str) -> bool:
+        spinner_stop["fn"]()
         return console.input(
             f"[{palette['accent']}]{escape(prompt)} [y/N] [/]"
         ).strip().lower() == "y"
@@ -171,17 +188,33 @@ def main(argv: list[str] | None = None) -> int:
                 continue
             console.print(result, style=palette["accent"])
             continue
+        if fx:
+            status = console.status("working...", spinner="dots")
+            status.start()
+            stop = run_once(status.stop)
+        else:
+            stop = run_once(lambda: None)
+        spinner_stop["fn"] = stop
+
         def render_text(text):
+            stop()
             console.print("AI", style=palette["accent"])
             console.print(Markdown(text))
+
         def render_tool(ev):
             nonlocal cmds
+            stop()
             cmds += 1
             cmd = ev.arguments.get("command", ev.arguments)
             console.print(f"[EXEC] {cmd}", style=palette["accent"], markup=False)
             console.print(ev.result, style=palette["dim"], markup=False)
+
         def render_error(e):
+            stop()
             console.print(f"\n[!] error: {e}", style=palette["alert"])
+
         stream_turn(agent.send(line), render_text, render_tool, render_error)
+        stop()
+        spinner_stop["fn"] = lambda: None
     console.print("bye", style=palette["dim"])
     return 0
