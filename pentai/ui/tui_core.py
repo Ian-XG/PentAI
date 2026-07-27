@@ -1,10 +1,10 @@
 from io import StringIO
 from rich.console import Console
 
-def render_to_ansi(renderable, width: int = 100) -> str:
+def render_to_ansi(renderable, width: int = 100, theme=None) -> str:
     buf = StringIO()
     console = Console(file=buf, force_terminal=True, color_system="truecolor",
-                      width=width, soft_wrap=False)
+                      width=width, soft_wrap=False, theme=theme)
     console.print(renderable)
     return buf.getvalue()
 
