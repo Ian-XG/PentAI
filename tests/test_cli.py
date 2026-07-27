@@ -61,3 +61,11 @@ def test_stream_turn_flushes_before_tool_and_at_end():
     stream_turn(events(), lambda t: rendered.append(t), lambda ev: tools.append(ev), lambda e: None)
     assert rendered == ["thinking ", "done"]   # flushed before tool and at end
     assert len(tools) == 1
+
+def test_build_agent_tools_match_startup_list(tmp_path):
+    from pentai.config import Config, ProviderConfig
+    from pentai.scope import Scope
+    from pentai.cli import build_agent, AGENT_TOOL_NAMES
+    cfg = Config(active="a", providers={"a": ProviderConfig("anthropic", "m", "k")})
+    agent = build_agent(cfg, Scope([]), confirm=lambda p: True, session_dir=tmp_path)
+    assert set(agent.tools) == set(AGENT_TOOL_NAMES)
