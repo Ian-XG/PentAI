@@ -5,6 +5,16 @@ def test_parse_slash():
     assert parse_slash("/scope add 10.0.0.0/24") == ("scope", ["add", "10.0.0.0/24"])
     assert parse_slash("hello") is None
 
+def test_parse_slash_strips_whitespace():
+    from pentai.commands import parse_slash
+    assert parse_slash("  /scope add workforce-os.app  ") == ("scope", ["add", "workforce-os.app"])
+    assert parse_slash("\t/help") == ("help", [])
+
+def test_parse_slash_non_slash_and_blank():
+    from pentai.commands import parse_slash
+    assert parse_slash("hi there") is None
+    assert parse_slash("   ") is None
+
 def test_scope_add_and_list():
     s = Scope([])
     handle_slash("scope", ["add", "10.0.0.0/24"], scope=s)

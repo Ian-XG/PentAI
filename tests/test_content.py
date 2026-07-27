@@ -23,3 +23,11 @@ def test_system_prompt_is_action_biased():
     assert "mode" in text
     # still ethical
     assert "authorized" in text
+
+def test_system_prompt_is_terse_and_non_repeating():
+    from pathlib import Path
+    import pentai
+    text = (Path(pentai.__file__).parent / "prompts" / "system.md").read_text().lower()
+    assert "terse" in text
+    assert "do not repeat" in text
+    assert "one sentence" in text
