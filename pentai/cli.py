@@ -1,3 +1,4 @@
+import os
 import sys
 import time
 from pathlib import Path
@@ -62,8 +63,16 @@ def stream_turn(events, render_text, render_tool, render_error) -> None:
     else:
         flush()
 
+def session_context(scope_entries: list[str], mode: str, cwd: str) -> str:
+    scope = ", ".join(scope_entries) if scope_entries else "(empty - tell the user to run /scope add <target>)"
+    return (f"--- session context ---\n"
+            f"authorized scope: {scope}\n"
+            f"permission mode: {mode}\n"
+            f"working directory: {cwd}")
+
 def build_agent(cfg: Config, scope: Scope, confirm: Callable[[str], bool],
-                session_dir: Path, mode_getter: Callable[[], str] = lambda: "ask") -> Agent:
+                session_dir: Path, mode_getter: Callable[[], str] = lambda: "ask",
+                context_provider: Callable[[], str] | None = None) -> Agent:
     provider = build_provider(cfg)
     tools = {
         "run_command": ToolSpec(
@@ -77,7 +86,7 @@ def build_agent(cfg: Config, scope: Scope, confirm: Callable[[str], bool],
             LOAD_PLAYBOOK_TOOL,
             lambda args: load_playbook(args.get("name", ""), skills_dir=_SKILLS_DIR)),
     }
-    return Agent(provider, _SYSTEM_PROMPT, tools)
+    return Agent(provider, _SYSTEM_PROMPT, tools, context_provider=context_provider)
 
 def apply_mode_command(current: str, args: list[str]) -> str:
     if not args:
@@ -161,7 +170,8 @@ def main(argv: list[str] | None = None) -> int:
             return HTML(f'<style bg="ansired" fg="ansiwhite">{base} - NO CONFIRMATIONS </style>')
         return base
 
-    agent = build_agent(cfg, scope, confirm, session_dir, mode_getter)
+    agent = build_agent(cfg, scope, confirm, session_dir, mode_getter,
+                        context_provider=lambda: session_context(scope.entries, mode_ref["mode"], os.getcwd()))
     session: PromptSession = PromptSession(key_bindings=kb, bottom_toolbar=bottom_toolbar)
     while True:
         bar_style = palette["alert"] if mode_ref["mode"] == "bypass" else palette["dim"]
@@ -191,7 +201,8 @@ def main(argv: list[str] | None = None) -> int:
                 palette = get_palette(cfg.palette)
                 console.push_theme(markdown_theme(palette))
                 scope = Scope(cfg.scope)
-                agent = build_agent(cfg, scope, confirm, session_dir, mode_getter)
+                agent = build_agent(cfg, scope, confirm, session_dir, mode_getter,
+                                    context_provider=lambda: session_context(scope.entries, mode_ref["mode"], os.getcwd()))
                 console.print("[ OK ] saved ~/.pentai/config.yaml", style=palette["accent"])
                 continue
             console.print(result, style=palette["accent"])
