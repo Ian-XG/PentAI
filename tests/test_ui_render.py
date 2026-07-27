@@ -13,3 +13,14 @@ def test_status_bar_contents():
     assert "anthropic:claude-opus-4" in s
     assert "scope:2" in s
     assert "cmds:5" in s
+
+def test_status_bar_includes_mode():
+    s = status_bar("anthropic", "claude-opus-4", 2, 5, "bypass")
+    assert "mode:BYPASS" in s
+
+def test_markdown_theme_has_markdown_styles():
+    from pentai.ui.render import markdown_theme
+    from pentai.ui.theme import get_palette
+    theme = markdown_theme(get_palette("green"))
+    for key in ("markdown.h1", "markdown.item.number", "markdown.table.header"):
+        assert key in theme.styles

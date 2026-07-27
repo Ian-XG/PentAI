@@ -45,7 +45,8 @@ def build_config(choice: ProviderChoice, *, model: str, api_key: str | None = No
     return {"active": choice.name, "palette": "green", "fx": True, "scope": [],
             "providers": {choice.name: pc}}
 
-def run_wizard(prompt_fn: Callable[[str], str], print_fn: Callable[[str], None]) -> dict:
+def run_wizard(prompt_fn: Callable[[str], str], print_fn: Callable[[str], None],
+               secret_fn: Callable[[str], str] | None = None) -> dict:
     print_fn("PentAI setup - choose your AI provider:")
     for i, c in enumerate(PROVIDER_CHOICES, 1):
         print_fn(f"  {i}) {c.label}")
@@ -62,7 +63,8 @@ def run_wizard(prompt_fn: Callable[[str], str], print_fn: Callable[[str], None])
     model = prompt_fn(f"Model [{choice.default_model}]: ").strip() or choice.default_model
     api_key = None
     if choice.needs_key:
-        api_key = prompt_fn(f"Paste your {choice.api_key_env}: ").strip() or None
+        ask_key = secret_fn or prompt_fn
+        api_key = ask_key(f"Paste your {choice.api_key_env}: ").strip() or None
     return build_config(choice, model=model, api_key=api_key, base_url=base_url)
 
 def merge_provider(base: dict | None, new: dict) -> dict:
