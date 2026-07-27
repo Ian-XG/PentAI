@@ -259,17 +259,169 @@ git commit -m "feat: full-screen app shell (bordered input, output region, key b
 
 ---
 
-### Task 3: Agent worker + queued messages + confirm + ESC-stop
+### Task 3: Turn controller state machine (queue + stop + confirm routing)
 
 **Files:**
 - Create: `pentai/ui/runner.py`
-- Modify: `pentai/ui/app.py`
 - Test: `tests/test_runner.py`
 
-**Outline:**
-- A `TurnRunner` that, given an `Agent` and render callbacks, runs `agent.send(text)` in a background executor, marshals each rendered event back to the UI thread (via the app's event loop `call_soon_threadsafe` / `run_in_terminal`), and supports a cooperative stop flag checked between events. While a turn runs, submitted input is `TurnQueue.enqueue`d; on completion the next queued message is dispatched.
-- Confirm (ASK mode): the worker's `confirm(prompt)` posts a request to the UI (a yes/no line in the input/status) and blocks on a threading.Event until the user answers; AUTO/BYPASS never prompt.
-- Unit-test the parts that can be isolated: the queue-drain logic (enqueue during "busy", drain on "idle"), and the stop flag halting iteration of a scripted event generator. The threading/prompt_toolkit marshaling is verified by smoke.
+**Interfaces:**
+- Produces `class TurnController(start_turn: Callable[[str], None])` - a synchronous, testable state machine (the actual background execution is injected via `start_turn`, wired in Task 4):
+  - `submit(text)`: strip; ignore blank; if a confirm is awaiting, interpret this input as the yes/no answer and deliver it; else if busy, enqueue; else begin a turn (`start_turn(text)`, sets `busy=True`).
+  - `finish()`: mark idle; if the queue has a next message, begin it.
+  - `stop()`: set the cooperative `stopped` flag (only while busy).
+  - `request_confirm(on_answer)`: register a callback that the next `submit` answers (y/yes -> True).
+  - properties: `busy`, `stopped`, `awaiting_confirm`, `queue` (a TurnQueue).
+
+- [ ] **Step 1: Write the failing test**
+
+```python
+# tests/test_runner.py
+from pentai.ui.runner import TurnController
+
+def test_submit_idle_begins_turn():
+    started = []
+    c = TurnController(start_turn=started.append)
+    c.submit("scan 10.0.0.5")
+    assert started == ["scan 10.0.0.5"] and c.busy is True
+
+def test_submit_while_busy_enqueues():
+    started = []
+    c = TurnController(start_turn=started.append)
+    c.submit("first")
+    c.submit("second")
+    assert started == ["first"]            # second not started yet
+    assert c.queue.pending == ["second"]
+
+def test_finish_drains_next():
+    started = []
+    c = TurnController(start_turn=started.append)
+    c.submit("first"); c.submit("second")
+    c.finish()
+    assert started == ["first", "second"]  # finish began the queued one
+    assert c.busy is True
+
+def test_finish_when_empty_goes_idle():
+    c = TurnController(start_turn=lambda t: None)
+    c.submit("only"); c.finish()
+    assert c.busy is False and c.queue.pending == []
+
+def test_confirm_routing():
+    answers = []
+    c = TurnController(start_turn=lambda t: None)
+    c.submit("scan")                       # busy now
+    c.request_confirm(answers.append)
+    assert c.awaiting_confirm is True
+    c.submit("yes")                        # this is the answer, not a new turn/queue item
+    assert answers == [True]
+    assert c.awaiting_confirm is False
+    assert c.queue.pending == []           # not enqueued
+
+def test_confirm_no_variant():
+    answers = []
+    c = TurnController(start_turn=lambda t: None)
+    c.submit("scan"); c.request_confirm(answers.append)
+    c.submit("n")
+    assert answers == [False]
+
+def test_stop_only_when_busy():
+    c = TurnController(start_turn=lambda t: None)
+    c.stop()
+    assert c.stopped is False
+    c.submit("scan")
+    c.stop()
+    assert c.stopped is True
+
+def test_blank_submit_ignored():
+    started = []
+    c = TurnController(start_turn=started.append)
+    c.submit("   ")
+    assert started == [] and c.busy is False
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `python3 -m pytest tests/test_runner.py -v`
+Expected: FAIL (no module).
+
+- [ ] **Step 3: Write minimal implementation**
+
+```python
+# pentai/ui/runner.py
+from typing import Callable, Optional
+from .tui_core import TurnQueue
+
+class TurnController:
+    def __init__(self, start_turn: Callable[[str], None]) -> None:
+        self._start_turn = start_turn
+        self.queue = TurnQueue()
+        self.busy = False
+        self.stopped = False
+        self._awaiting_confirm: Optional[Callable[[bool], None]] = None
+
+    @property
+    def awaiting_confirm(self) -> bool:
+        return self._awaiting_confirm is not None
+
+    def submit(self, text: str) -> None:
+        text = text.strip()
+        if not text:
+            return
+        if self._awaiting_confirm is not None:
+            cb, self._awaiting_confirm = self._awaiting_confirm, None
+            cb(text.lower() in ("y", "yes"))
+            return
+        if self.busy:
+            self.queue.enqueue(text)
+            return
+        self._begin(text)
+
+    def _begin(self, text: str) -> None:
+        self.busy = True
+        self.stopped = False
+        self._start_turn(text)
+
+    def finish(self) -> None:
+        self.busy = False
+        nxt = self.queue.pop()
+        if nxt is not None:
+            self._begin(nxt)
+
+    def stop(self) -> None:
+        if self.busy:
+            self.stopped = True
+
+    def request_confirm(self, on_answer: Callable[[bool], None]) -> None:
+        self._awaiting_confirm = on_answer
+```
+
+- [ ] **Step 4: Run tests to verify they pass**
+
+Run: `python3 -m pytest tests/test_runner.py -v` then full `python3 -m pytest -q`.
+Expected: PASS (8 tests).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add pentai/ui/runner.py tests/test_runner.py
+git commit -m "feat: turn controller state machine (queue, stop, confirm routing)"
+```
+
+---
+
+### Task 4: Wire the full-screen app into the CLI (background turns, confirm, --classic fallback)
+
+**Files:**
+- Modify: `pentai/cli.py`
+- Test: `tests/test_cli.py`
+
+**Outline (finalized when dispatched; the threading/asyncio glue is thin and smoke-verified):**
+- Rename the current `main()` loop to `main_classic()`. New `main(argv)` parses `--classic` (-> `main_classic()`), else launches the full-screen app.
+- Full-screen path reuses onboarding/config/scope/modes/toolcheck/build_agent. It creates an `OutputBuffer`, a `TurnController`, and a `build_app(...)`; `on_submit -> controller.submit`; `on_cycle_mode -> cycle mode_ref`; `on_stop -> controller.stop`; `get_status -> mode/scope/cmds/queued`.
+- `start_turn(text)` runs `agent.send(text)` in a background thread (`asyncio` `run_in_executor` via `app.loop`), appends each rendered event (rich -> `render_to_ansi`) to the OutputBuffer and `app.invalidate()`s from the loop thread, honors `controller.stopped` between events, and calls `controller.finish()` on completion.
+- ASK-mode confirm: the tool's confirm callback (running in the worker thread) uses `controller.request_confirm(...)` + a `threading.Event` to block until the user answers via the input box; AUTO/BYPASS never prompt.
+- Keep the boot (glitch/startup panel/toolcheck) before entering the app; guard so a non-TTY does not crash.
+- Smoke: `printf '/quit\n' | pentai` (full-screen path degrades or exits cleanly under non-TTY) and `pentai --classic` still runs the old loop. Since `/quit` should also work in the app, ensure a `/quit` submit exits. Paste both. Unit test: `main` dispatches to `main_classic` on `--classic` (monkeypatch/capture), keeping existing cli tests green.
 
 ---
 
