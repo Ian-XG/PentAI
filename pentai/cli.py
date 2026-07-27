@@ -223,6 +223,36 @@ def main(argv: list[str] | None = None) -> int:
                                     context_provider=lambda: session_context(scope.entries, mode_ref["mode"], os.getcwd(), installed_tools))
                 console.print("[ OK ] saved ~/.pentai/config.yaml", style=palette["accent"])
                 continue
+            if result == "__clear__":
+                console.clear()
+                continue
+            if result == "__notes__":
+                notes = session_dir / "notes.md"
+                if notes.exists():
+                    console.print(Markdown(notes.read_text()))
+                else:
+                    console.print("[no notes yet]", style=palette["dim"])
+                continue
+            if result == "__report__":
+                notes = session_dir / "notes.md"
+                if notes.exists():
+                    console.print(Markdown("# PentAI Session Report\n\n" + notes.read_text()))
+                else:
+                    console.print("[no findings recorded yet - the agent saves them with save_note]",
+                                  style=palette["dim"])
+                continue
+            if result == "__tools__":
+                render_toolcheck(console, palette, _tool_results)
+                console.print("agent tools: " + ", ".join(AGENT_TOOL_NAMES), style=palette["dim"])
+                continue
+            if result == "__playbooks__":
+                names = list_playbooks(_SKILLS_DIR)
+                if slash[1]:
+                    name = slash[1][0]
+                    console.print(Markdown(load_playbook(name, skills_dir=_SKILLS_DIR)))
+                else:
+                    console.print("playbooks: " + ", ".join(names), style=palette["accent"])
+                continue
             console.print(result, style=palette["accent"])
             continue
         if fx:
