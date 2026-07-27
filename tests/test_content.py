@@ -31,3 +31,12 @@ def test_system_prompt_is_terse_and_non_repeating():
     assert "terse" in text
     assert "do not repeat" in text
     assert "one sentence" in text
+
+
+def test_system_prompt_does_not_nag_for_scope():
+    from pathlib import Path
+    import pentai
+    text = (Path(pentai.__file__).parent / "prompts" / "system.md").read_text().lower()
+    assert "only bring up scope" in text
+    assert "greetings" in text
+    assert "never demand a target" in text

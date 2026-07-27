@@ -424,7 +424,9 @@ def main_tui(argv: list[str]) -> int:
         text = text.strip()
         if not text:
             return
-        output.append(render_to_ansi(Text(f"> {text}"), theme=markdown_theme(palette)))
+        output.append(render_to_ansi(
+            Text(f" > {text} ", style=f"bold black on {palette['accent']}"),
+            theme=markdown_theme(palette)))
         app.invalidate()
         if controller.awaiting_confirm:
             controller.submit(text)
