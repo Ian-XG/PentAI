@@ -66,6 +66,7 @@ def parse_sse_event(event_type: str, data: dict) -> Event | None:
 
 def _httpx_poster(url: str, headers: dict, json: dict) -> Iterator[tuple[str, dict]]:
     with httpx.stream("POST", url, headers=headers, json=json, timeout=None) as resp:
+        resp.raise_for_status()
         event_type = ""
         for line in resp.iter_lines():
             if line.startswith("event:"):
