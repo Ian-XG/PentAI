@@ -40,3 +40,10 @@ def test_system_prompt_does_not_nag_for_scope():
     assert "only bring up scope" in text
     assert "greetings" in text
     assert "never demand a target" in text
+
+def test_system_prompt_forbids_prose_permission_asking():
+    from pathlib import Path
+    import pentai
+    text = (Path(pentai.__file__).parent / "prompts" / "system.md").read_text().lower()
+    assert "do not ask for permission in prose" in text
+    assert "shall i run this" in text
