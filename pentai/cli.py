@@ -1,4 +1,5 @@
 import sys
+import time
 from pathlib import Path
 from typing import Callable
 from prompt_toolkit import PromptSession
@@ -7,6 +8,8 @@ from prompt_toolkit.formatted_text import HTML
 from rich.console import Console
 from rich.markup import escape
 from rich.markdown import Markdown
+from rich.live import Live
+from rich.text import Text
 from .config import Config, load_config, load_config_file, default_config
 from .onboarding import needs_onboarding, run_wizard, save_config, merge_provider, read_config_file
 from .scope import Scope
@@ -15,15 +18,28 @@ from .agent import Agent, ToolSpec, ToolInvocation
 from .providers.base import TextDelta
 from .tools.shell import run_command, RUN_COMMAND_TOOL
 from .tools.notes import save_note, SAVE_NOTE_TOOL
-from .tools.playbooks import load_playbook, LOAD_PLAYBOOK_TOOL
+from .tools.playbooks import load_playbook, LOAD_PLAYBOOK_TOOL, list_playbooks
 from .commands import parse_slash, handle_slash
 from .permissions import MODES, next_mode
 from .ui.theme import get_palette
-from .ui.banner import render_banner, boot_lines
+from .ui.animations import run_once, glitch_frames
+from .ui.banner import boot_lines, SIGIL
+from .ui.startup import render_startup
 from .ui.render import status_bar, markdown_theme
 
 _SKILLS_DIR = Path(__file__).parent / "skills"
 _SYSTEM_PROMPT = (Path(__file__).parent / "prompts" / "system.md").read_text()
+
+AGENT_TOOL_NAMES = ["run_command", "save_note", "load_playbook"]
+
+def _play_sigil_glitch(console, palette) -> None:
+    try:
+        with Live(console=console, refresh_per_second=20, transient=True) as live:
+            for frame in glitch_frames(SIGIL, frames=6):
+                live.update(Text(frame, style=palette["accent"]))
+                time.sleep(0.05)
+    except Exception:
+        pass  # cosmetic only - never let a boot animation crash the app
 
 def stream_turn(events, render_text, render_tool, render_error) -> None:
     """Consume agent events, buffering text and flushing it as one block before
@@ -84,6 +100,7 @@ def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     fx = "--no-fx" not in argv
     console = Console()
+    session_id = time.strftime("%Y%m%d_%H%M%S")
     if needs_onboarding():
         cfg_dict = run_wizard(lambda p: console.input(p, markup=False),
                               lambda m: console.print(m),
@@ -108,13 +125,21 @@ def main(argv: list[str] | None = None) -> int:
     if fx:
         for line in boot_lines():
             console.print(line, style=palette["dim"])
-    console.print(render_banner(palette, simple=not fx), style=palette["primary"])
+        _play_sigil_glitch(console, palette)
+    render_startup(console, palette=palette, provider=cfg.active,
+                   model=cfg.providers[cfg.active].model,
+                   playbooks=list_playbooks(_SKILLS_DIR),
+                   tools=AGENT_TOOL_NAMES,
+                   modes=MODES, scope_count=len(cfg.scope), session_id=session_id)
 
     scope = Scope(cfg.scope)
     session_dir = Path.home() / ".pentai" / "session"
     cmds = 0
 
+    spinner_stop: dict = {"fn": lambda: None}
+
     def confirm(prompt: str) -> bool:
+        spinner_stop["fn"]()
         return console.input(
             f"[{palette['accent']}]{escape(prompt)} [y/N] [/]"
         ).strip().lower() == "y"
@@ -171,17 +196,38 @@ def main(argv: list[str] | None = None) -> int:
                 continue
             console.print(result, style=palette["accent"])
             continue
+        if fx:
+            status = console.status("working...", spinner="dots")
+            status.start()
+            stop = run_once(status.stop)
+        else:
+            stop = run_once(lambda: None)
+        spinner_stop["fn"] = stop
+
         def render_text(text):
+            stop()
             console.print("AI", style=palette["accent"])
             console.print(Markdown(text))
+
         def render_tool(ev):
             nonlocal cmds
+            stop()
             cmds += 1
             cmd = ev.arguments.get("command", ev.arguments)
             console.print(f"[EXEC] {cmd}", style=palette["accent"], markup=False)
             console.print(ev.result, style=palette["dim"], markup=False)
+
         def render_error(e):
+            stop()
             console.print(f"\n[!] error: {e}", style=palette["alert"])
-        stream_turn(agent.send(line), render_text, render_tool, render_error)
+
+        try:
+            stream_turn(agent.send(line), render_text, render_tool, render_error)
+        except KeyboardInterrupt:
+            stop()
+            console.print("\n[!] interrupted", style=palette["alert"])
+        finally:
+            stop()
+            spinner_stop["fn"] = lambda: None
     console.print("bye", style=palette["dim"])
     return 0
