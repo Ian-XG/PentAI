@@ -36,3 +36,28 @@ def test_apply_mode_command_cycles_and_sets():
     assert apply_mode_command("ask", []) == "auto"      # cycle
     assert apply_mode_command("ask", ["bypass"]) == "bypass"  # set
     assert apply_mode_command("ask", ["nonsense"]) == "ask"   # invalid -> unchanged
+
+def test_stream_turn_flushes_buffered_text_on_error():
+    from pentai.cli import stream_turn
+    from pentai.providers.base import TextDelta
+    def events():
+        yield TextDelta("partial answer ")
+        raise RuntimeError("boom")
+    rendered, errors = [], []
+    stream_turn(events(), lambda t: rendered.append(t), lambda ev: None,
+                lambda e: errors.append(str(e)))
+    assert rendered == ["partial answer "]   # buffered text NOT lost
+    assert errors and "boom" in errors[0]
+
+def test_stream_turn_flushes_before_tool_and_at_end():
+    from pentai.cli import stream_turn
+    from pentai.providers.base import TextDelta
+    from pentai.agent import ToolInvocation
+    def events():
+        yield TextDelta("thinking ")
+        yield ToolInvocation("run_command", {"command": "ls"}, "ok")
+        yield TextDelta("done")
+    rendered, tools = [], []
+    stream_turn(events(), lambda t: rendered.append(t), lambda ev: tools.append(ev), lambda e: None)
+    assert rendered == ["thinking ", "done"]   # flushed before tool and at end
+    assert len(tools) == 1

@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Callable
 from prompt_toolkit import PromptSession
 from prompt_toolkit.key_binding import KeyBindings
+from prompt_toolkit.formatted_text import HTML
 from rich.console import Console
 from rich.markup import escape
 from rich.markdown import Markdown
@@ -23,6 +24,27 @@ from .ui.render import status_bar, markdown_theme
 
 _SKILLS_DIR = Path(__file__).parent / "skills"
 _SYSTEM_PROMPT = (Path(__file__).parent / "prompts" / "system.md").read_text()
+
+def stream_turn(events, render_text, render_tool, render_error) -> None:
+    """Consume agent events, buffering text and flushing it as one block before
+    each tool invocation, at the end, AND on error (so partial output is never lost)."""
+    buf: list[str] = []
+    def flush():
+        if buf:
+            render_text("".join(buf))
+            buf.clear()
+    try:
+        for ev in events:
+            if isinstance(ev, TextDelta):
+                buf.append(ev.text)
+            elif isinstance(ev, ToolInvocation):
+                flush()
+                render_tool(ev)
+    except Exception as e:
+        flush()
+        render_error(e)
+    else:
+        flush()
 
 def build_agent(cfg: Config, scope: Scope, confirm: Callable[[str], bool],
                 session_dir: Path, mode_getter: Callable[[], str] = lambda: "ask") -> Agent:
@@ -98,6 +120,7 @@ def main(argv: list[str] | None = None) -> int:
         ).strip().lower() == "y"
 
     mode_ref = {"mode": "ask"}
+    mode_getter = lambda: mode_ref["mode"]
 
     kb = KeyBindings()
 
@@ -107,21 +130,29 @@ def main(argv: list[str] | None = None) -> int:
         event.app.invalidate()
 
     def bottom_toolbar():
-        return (f" mode: {mode_ref['mode'].upper()}  (shift+tab to cycle)"
-                f"   scope: {len(scope.entries)}   cmds: {cmds}")
+        m = mode_ref["mode"].upper()
+        base = f" mode: {m}  (shift+tab to cycle)   scope: {len(scope.entries)}   cmds: {cmds} "
+        if mode_ref["mode"] == "bypass":
+            return HTML(f'<style bg="ansired" fg="ansiwhite">{base} - NO CONFIRMATIONS </style>')
+        return base
 
-    agent = build_agent(cfg, scope, confirm, session_dir, lambda: mode_ref["mode"])
+    agent = build_agent(cfg, scope, confirm, session_dir, mode_getter)
     session: PromptSession = PromptSession(key_bindings=kb, bottom_toolbar=bottom_toolbar)
     while True:
+        bar_style = palette["alert"] if mode_ref["mode"] == "bypass" else palette["dim"]
         console.print(status_bar(cfg.active, cfg.providers[cfg.active].model,
                                  len(scope.entries), cmds, mode_ref["mode"]),
-                      style=palette["dim"])
+                      style=bar_style)
         try:
             line = session.prompt("root@pentai:~# ")
         except (EOFError, KeyboardInterrupt):
             break
         slash = parse_slash(line)
         if slash is not None:
+            if slash[0] == "mode":
+                mode_ref["mode"] = apply_mode_command(mode_ref["mode"], slash[1])
+                console.print(f"[ mode: {mode_ref['mode'].upper()} ]", style=palette["accent"])
+                continue
             result = handle_slash(*slash, scope=scope)
             if result == "__quit__":
                 break
@@ -132,34 +163,25 @@ def main(argv: list[str] | None = None) -> int:
                 merged = merge_provider(read_config_file(), wiz)
                 save_config(merged)
                 cfg = load_config_file()
+                palette = get_palette(cfg.palette)
+                console.push_theme(markdown_theme(palette))
                 scope = Scope(cfg.scope)
-                agent = build_agent(cfg, scope, confirm, session_dir, lambda: mode_ref["mode"])
+                agent = build_agent(cfg, scope, confirm, session_dir, mode_getter)
                 console.print("[ OK ] saved ~/.pentai/config.yaml", style=palette["accent"])
-                continue
-            if slash[0] == "mode":
-                mode_ref["mode"] = apply_mode_command(mode_ref["mode"], slash[1])
-                console.print(f"[ mode: {mode_ref['mode'].upper()} ]", style=palette["accent"])
                 continue
             console.print(result, style=palette["accent"])
             continue
-        buf: list[str] = []
-        def flush_ai():
-            if buf:
-                console.print("AI", style=palette["accent"])
-                console.print(Markdown("".join(buf)))
-                buf.clear()
-        try:
-            for ev in agent.send(line):
-                if isinstance(ev, TextDelta):
-                    buf.append(ev.text)
-                elif isinstance(ev, ToolInvocation):
-                    flush_ai()
-                    cmds += 1
-                    cmd = ev.arguments.get("command", ev.arguments)
-                    console.print(f"[EXEC] {cmd}", style=palette["accent"], markup=False)
-                    console.print(ev.result, style=palette["dim"], markup=False)
-            flush_ai()
-        except Exception as e:
+        def render_text(text):
+            console.print("AI", style=palette["accent"])
+            console.print(Markdown(text))
+        def render_tool(ev):
+            nonlocal cmds
+            cmds += 1
+            cmd = ev.arguments.get("command", ev.arguments)
+            console.print(f"[EXEC] {cmd}", style=palette["accent"], markup=False)
+            console.print(ev.result, style=palette["dim"], markup=False)
+        def render_error(e):
             console.print(f"\n[!] error: {e}", style=palette["alert"])
+        stream_turn(agent.send(line), render_text, render_tool, render_error)
     console.print("bye", style=palette["dim"])
     return 0
