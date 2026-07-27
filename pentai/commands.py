@@ -1,6 +1,7 @@
 from .scope import Scope
 
-_HELP = ("commands: /scope add <target>, /scope list, /setup, /help, /quit")
+_HELP = ("commands: /scope add <target>, /scope list, /setup, /mode [ask|auto|bypass], "
+         "/clear, /notes, /report, /tools, /playbooks [name], /help, /quit")
 
 def parse_slash(line: str) -> tuple[str, list[str]] | None:
     if not line.startswith("/"):
@@ -20,6 +21,8 @@ def handle_slash(command: str, args: list[str], *, scope: Scope) -> str:
         return "usage: /scope add <target> | /scope list"
     if command == "setup":
         return "__setup__"
+    if command in ("clear", "notes", "report", "tools", "playbooks"):
+        return "__" + command + "__"
     if command == "help":
         return _HELP
     if command == "quit":

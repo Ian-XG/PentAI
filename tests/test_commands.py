@@ -25,3 +25,20 @@ def test_help_lists_setup():
     from pentai.scope import Scope
     from pentai.commands import handle_slash
     assert "/setup" in handle_slash("help", [], scope=Scope([]))
+
+def test_new_command_sentinels():
+    from pentai.scope import Scope
+    from pentai.commands import handle_slash
+    s = Scope([])
+    assert handle_slash("clear", [], scope=s) == "__clear__"
+    assert handle_slash("notes", [], scope=s) == "__notes__"
+    assert handle_slash("report", [], scope=s) == "__report__"
+    assert handle_slash("tools", [], scope=s) == "__tools__"
+    assert handle_slash("playbooks", [], scope=s) == "__playbooks__"
+
+def test_help_lists_new_commands():
+    from pentai.scope import Scope
+    from pentai.commands import handle_slash
+    h = handle_slash("help", [], scope=Scope([]))
+    for c in ("/clear", "/notes", "/report", "/tools", "/playbooks"):
+        assert c in h
