@@ -22,3 +22,11 @@ def test_render_startup_outputs_key_fields():
     assert "recon" in out
     assert "ollama-cloud" in out and "gpt-oss:120b" in out
     assert "20260726_x" in out
+
+def test_render_startup_narrow_terminal_has_fields():
+    con = Console(record=True, width=48)
+    render_startup(con, palette=get_palette("green"), provider="ollama",
+                   model="llama3.1", playbooks=["recon"], tools=["run_command"],
+                   modes=["ask", "auto", "bypass"], scope_count=0, session_id="20260727_x")
+    out = con.export_text()
+    assert "PentAI" in out and "recon" in out and "20260727_x" in out

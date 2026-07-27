@@ -24,10 +24,16 @@ def render_startup(console, *, palette, provider, model, playbooks, tools, modes
     body.add_row(Text("provider", style=dim), Text(f"{provider}:{model}", style=accent))
     body.add_row(Text("scope", style=dim), Text(str(scope_count), style=primary))
     body.add_row(Text("session", style=dim), Text(session_id, style=dim))
-    layout = Table.grid(padding=(0, 3))
-    layout.add_column()
-    layout.add_column()
-    layout.add_row(Text(SIGIL, style=accent), body)
+    if console.width < 72:
+        layout = Table.grid()
+        layout.add_column()
+        layout.add_row(Text(SIGIL, style=accent))
+        layout.add_row(body)
+    else:
+        layout = Table.grid(padding=(0, 3))
+        layout.add_column()
+        layout.add_column()
+        layout.add_row(Text(SIGIL, style=accent), body)
     console.print(Panel(layout, border_style=accent,
                         title="[ authorized use only ]", title_align="left"))
 
