@@ -231,7 +231,7 @@ def main(argv: list[str] | None = None) -> int:
                 if notes.exists():
                     console.print(Markdown(notes.read_text()))
                 else:
-                    console.print("[no notes yet]", style=palette["dim"])
+                    console.print("[no notes yet]", style=palette["dim"], markup=False)
                 continue
             if result == "__report__":
                 notes = session_dir / "notes.md"
@@ -239,7 +239,7 @@ def main(argv: list[str] | None = None) -> int:
                     console.print(Markdown("# PentAI Session Report\n\n" + notes.read_text()))
                 else:
                     console.print("[no findings recorded yet - the agent saves them with save_note]",
-                                  style=palette["dim"])
+                                  style=palette["dim"], markup=False)
                 continue
             if result == "__tools__":
                 render_toolcheck(console, palette, _tool_results)
@@ -253,7 +253,7 @@ def main(argv: list[str] | None = None) -> int:
                 else:
                     console.print("playbooks: " + ", ".join(names), style=palette["accent"])
                 continue
-            console.print(result, style=palette["accent"])
+            console.print(result, style=palette["accent"], markup=False)
             continue
         if fx:
             status = console.status("working...", spinner="dots")
