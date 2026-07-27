@@ -1,7 +1,9 @@
 import os
+import socket
 import sys
 import time
 from pathlib import Path
+import httpx
 from typing import Callable
 from prompt_toolkit import PromptSession
 from prompt_toolkit.key_binding import KeyBindings
@@ -26,7 +28,7 @@ from .ui.theme import get_palette
 from .ui.animations import run_once, glitch_frames
 from .ui.banner import boot_lines, SIGIL
 from .ui.startup import render_startup
-from .ui.render import status_bar, markdown_theme
+from .ui.render import markdown_theme
 
 _SKILLS_DIR = Path(__file__).parent / "skills"
 _SYSTEM_PROMPT = (Path(__file__).parent / "prompts" / "system.md").read_text()
@@ -62,6 +64,16 @@ def stream_turn(events, render_text, render_tool, render_error) -> None:
         render_error(e)
     else:
         flush()
+
+def friendly_error(e: Exception) -> str:
+    conn_types = (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout, socket.gaierror)
+    msg = str(e)
+    if isinstance(e, conn_types) or "nodename nor servname" in msg or "Name or service not known" in msg or "Temporary failure in name resolution" in msg:
+        return ("cannot reach the AI provider (network / DNS). Check your internet connection, "
+                "the provider base_url, and your API key with /setup.")
+    if "401" in msg or "403" in msg or "unauthorized" in msg.lower() or "invalid api key" in msg.lower():
+        return "the AI provider rejected the request (auth). Check your API key with /setup."
+    return f"error: {msg}"
 
 def session_context(scope_entries: list[str], mode: str, cwd: str) -> str:
     scope = ", ".join(scope_entries) if scope_entries else "(empty - tell the user to run /scope add <target>)"
@@ -151,7 +163,7 @@ def main(argv: list[str] | None = None) -> int:
         spinner_stop["fn"]()
         return console.input(
             f"[{palette['accent']}]{escape(prompt)} [y/N] [/]"
-        ).strip().lower() == "y"
+        ).strip().lower() in ("y", "yes")
 
     mode_ref = {"mode": "ask"}
     mode_getter = lambda: mode_ref["mode"]
@@ -174,14 +186,12 @@ def main(argv: list[str] | None = None) -> int:
                         context_provider=lambda: session_context(scope.entries, mode_ref["mode"], os.getcwd()))
     session: PromptSession = PromptSession(key_bindings=kb, bottom_toolbar=bottom_toolbar)
     while True:
-        bar_style = palette["alert"] if mode_ref["mode"] == "bypass" else palette["dim"]
-        console.print(status_bar(cfg.active, cfg.providers[cfg.active].model,
-                                 len(scope.entries), cmds, mode_ref["mode"]),
-                      style=bar_style)
         try:
             line = session.prompt("root@pentai:~# ")
         except (EOFError, KeyboardInterrupt):
             break
+        if not line.strip():
+            continue
         slash = parse_slash(line)
         if slash is not None:
             if slash[0] == "mode":
@@ -230,7 +240,7 @@ def main(argv: list[str] | None = None) -> int:
 
         def render_error(e):
             stop()
-            console.print(f"\n[!] error: {e}", style=palette["alert"])
+            console.print(f"\n[!] {friendly_error(e)}", style=palette["alert"])
 
         try:
             stream_turn(agent.send(line), render_text, render_tool, render_error)
