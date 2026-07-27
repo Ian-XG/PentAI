@@ -390,10 +390,14 @@ def main_tui(argv: list[str]) -> int:
                         buf.append(ev.text)
                     elif isinstance(ev, ToolInvocation):
                         flush()
-                        cmds_ref["n"] += 1
                         cmd = ev.arguments.get("command", ev.arguments)
-                        _post(render_to_ansi(Text(f"[EXEC] {cmd}", style=palette["accent"])) +
-                              render_to_ansi(Text(str(ev.result), style=palette["dim"])))
+                        chunk = (render_to_ansi(Text(f"[EXEC] {cmd}", style=palette["accent"])) +
+                                render_to_ansi(Text(str(ev.result), style=palette["dim"])))
+                        def _append_exec(chunk: str = chunk) -> None:
+                            cmds_ref["n"] += 1
+                            output.append(chunk)
+                            app.invalidate()
+                        _run_on_loop(_append_exec)
             except Exception as e:
                 flush()
                 _post(render_to_ansi(Text(f"[!] {friendly_error(e)}", style=palette["alert"])))
@@ -488,17 +492,13 @@ def main_tui(argv: list[str]) -> int:
     app = build_app(output=output, on_submit=_on_submit, on_stop=controller.stop,
                     on_cycle_mode=_cycle_mode, get_status=_status)
 
+    if not sys.stdout.isatty():
+        console.print("[!] --tui needs an interactive terminal; use classic mode (just run pentai).", markup=False)
+        return 0
     try:
         app.run()
-    except EOFError:
+    except (EOFError, KeyboardInterrupt):
         pass
-    except KeyboardInterrupt:
-        pass
-    except Exception as e:
-        # prompt_toolkit's full-screen mode needs a real tty; under a pipe/non-tty
-        # it can raise (rather than degrade like the classic PromptSession does).
-        # Fail soft instead of dumping a traceback.
-        print(f"[!] --tui needs an interactive terminal ({e}); use --classic instead")
     return 0
 
 def main(argv: list[str] | None = None) -> int:

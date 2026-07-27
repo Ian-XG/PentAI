@@ -40,6 +40,9 @@ class TurnController:
     def stop(self) -> None:
         if self.busy:
             self.stopped = True
+        if self._awaiting_confirm is not None:
+            cb, self._awaiting_confirm = self._awaiting_confirm, None
+            cb(False)
 
     def request_confirm(self, on_answer: Callable[[bool], None]) -> None:
         self._awaiting_confirm = on_answer

@@ -53,6 +53,16 @@ def test_stop_only_when_busy():
     c.stop()
     assert c.stopped is True
 
+def test_stop_resolves_pending_confirm_as_no():
+    answers = []
+    c = TurnController(start_turn=lambda t: None)
+    c.submit("scan")
+    c.request_confirm(answers.append)
+    c.stop()
+    assert answers == [False]
+    assert c.awaiting_confirm is False
+    assert c.stopped is True
+
 def test_blank_submit_ignored():
     started = []
     c = TurnController(start_turn=started.append)
