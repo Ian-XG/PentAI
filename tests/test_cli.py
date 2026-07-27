@@ -96,18 +96,18 @@ def test_session_context_without_tools_omits_line():
     ctx = session_context([], "ask", "/home/x")
     assert "installed tools" not in ctx.lower()
 
-def test_main_defaults_to_classic(monkeypatch):
+def test_main_defaults_to_tui(monkeypatch):
     import pentai.cli as cli
     calls = {}
     monkeypatch.setattr(cli, "main_classic", lambda argv=None: calls.setdefault("classic", argv) or 0)
     monkeypatch.setattr(cli, "main_tui", lambda argv: calls.setdefault("tui", argv) or 0)
     cli.main([])
-    assert "classic" in calls and "tui" not in calls
+    assert "tui" in calls and "classic" not in calls
 
-def test_main_tui_flag_dispatches_to_tui(monkeypatch):
+def test_main_classic_flag_dispatches_to_classic(monkeypatch):
     import pentai.cli as cli
     calls = {}
     monkeypatch.setattr(cli, "main_classic", lambda argv=None: calls.setdefault("classic", argv) or 0)
     monkeypatch.setattr(cli, "main_tui", lambda argv: calls.setdefault("tui", argv) or 0)
-    cli.main(["--tui"])
-    assert "tui" in calls and "classic" not in calls
+    cli.main(["--classic"])
+    assert "classic" in calls and "tui" not in calls

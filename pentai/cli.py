@@ -422,6 +422,8 @@ def main_tui(argv: list[str]) -> int:
         text = text.strip()
         if not text:
             return
+        output.append(render_to_ansi(Text(f"> {text}"), theme=markdown_theme(palette)))
+        app.invalidate()
         if controller.awaiting_confirm:
             controller.submit(text)
             app.invalidate()
@@ -515,4 +517,4 @@ def main_tui(argv: list[str]) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
-    return main_tui(argv) if "--tui" in argv else main_classic(argv)
+    return main_classic(argv) if "--classic" in argv else main_tui(argv)
