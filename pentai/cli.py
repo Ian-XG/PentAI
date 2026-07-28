@@ -33,6 +33,7 @@ from .ui.animations import run_once, glitch_frames
 from .ui.banner import boot_lines, SIGIL
 from .ui.startup import render_startup, render_toolcheck
 from .ui.render import markdown_theme
+from .ui.toolfmt import format_command_output
 from .ui.app import build_app, OutputBuffer
 from .ui.runner import TurnController
 
@@ -390,6 +391,33 @@ def main_tui(argv: list[str]) -> int:
     def _start_turn(text: str) -> None:
         thinking["start"] = time.time()
         thinking["chars"] = 0
+        def render_tool(ev: ToolInvocation) -> None:
+            if ev.name == "run_command":
+                cmd = ev.arguments.get("command", "")
+                cmd_text = Text(f"$ {cmd}", style=palette["accent"])
+                result_text = Text(format_command_output(ev.result), style=palette["dim"])
+                def _append_exec(cmd_text: Text = cmd_text, result_text: Text = result_text) -> None:
+                    cmds_ref["n"] += 1
+                    output.append(cmd_text, theme=markdown_theme(palette))
+                    output.append(result_text, theme=markdown_theme(palette))
+                    app.invalidate()
+                _run_on_loop(_append_exec)
+            elif ev.name == "save_note":
+                def _append_note() -> None:
+                    output.append(Text("[note saved]", style=palette["dim"]), theme=markdown_theme(palette))
+                    app.invalidate()
+                _run_on_loop(_append_note)
+            elif ev.name == "load_playbook":
+                def _append_playbook(result: str = ev.result) -> None:
+                    output.append(Markdown(result), theme=markdown_theme(palette))
+                    app.invalidate()
+                _run_on_loop(_append_playbook)
+            else:
+                def _append_other(result: str = str(ev.result)) -> None:
+                    output.append(Text(result, style=palette["dim"]), theme=markdown_theme(palette))
+                    app.invalidate()
+                _run_on_loop(_append_other)
+
         def worker() -> None:
             buf: list[str] = []
             def flush() -> None:
@@ -406,15 +434,7 @@ def main_tui(argv: list[str]) -> int:
                         thinking["chars"] += len(ev.text)
                     elif isinstance(ev, ToolInvocation):
                         flush()
-                        cmd = ev.arguments.get("command", ev.arguments)
-                        cmd_text = Text(f"[EXEC] {cmd}", style=palette["accent"])
-                        result_text = Text(str(ev.result), style=palette["dim"])
-                        def _append_exec(cmd_text: Text = cmd_text, result_text: Text = result_text) -> None:
-                            cmds_ref["n"] += 1
-                            output.append(cmd_text, theme=markdown_theme(palette))
-                            output.append(result_text, theme=markdown_theme(palette))
-                            app.invalidate()
-                        _run_on_loop(_append_exec)
+                        render_tool(ev)
             except Exception as e:
                 flush()
                 _post(Text(f"[!] {friendly_error(e)}", style=palette["alert"]),
