@@ -111,6 +111,13 @@ def test_main_defaults_to_tui(monkeypatch):
     cli.main([])
     assert "tui" in calls and "classic" not in calls
 
+def test_restore_terminal_disables_mouse_tracking(capsys):
+    from pentai.cli import _restore_terminal
+    _restore_terminal()
+    out = capsys.readouterr().out
+    for seq in ("\x1b[?1000l", "\x1b[?1003l", "\x1b[?1006l", "\x1b[?1015l", "\x1b[?25h"):
+        assert seq in out          # every mouse mode disabled + cursor shown
+
 def test_main_settings_flag_dispatches(monkeypatch):
     import pentai.cli as cli
     calls = {}

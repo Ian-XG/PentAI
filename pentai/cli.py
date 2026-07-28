@@ -309,6 +309,17 @@ def _capture_console(render_fn: Callable[[Console], None], width: int | None = N
     render_fn(console)
     return buf.getvalue()
 
+def _restore_terminal() -> None:
+    """Belt-and-suspenders on TUI exit: disable every mouse-tracking mode and
+    show the cursor, so an abnormal exit (crash, SIGTERM, lost tty) can never
+    leave the shell echoing raw mouse escape codes like ^[[<35;13;20M. Harmless
+    to run after prompt_toolkit has already restored on a clean exit."""
+    try:
+        sys.stdout.write("\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?1015l\x1b[?25h")
+        sys.stdout.flush()
+    except Exception:
+        pass  # never let cleanup raise on the way out
+
 def run_settings(prompt_fn: Callable[[str], str], print_fn: Callable[[str], None],
                  secret_fn: Callable[[str], str] | None = None,
                  *, current: dict | None = None) -> dict:
@@ -574,6 +585,8 @@ def main_tui(argv: list[str]) -> int:
         app.run()
     except (EOFError, KeyboardInterrupt):
         pass
+    finally:
+        _restore_terminal()
     return 0
 
 def main(argv: list[str] | None = None) -> int:

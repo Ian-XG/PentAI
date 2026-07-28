@@ -41,6 +41,15 @@ def test_system_prompt_does_not_nag_for_scope():
     assert "greetings" in text
     assert "never demand a target" in text
 
+def test_system_prompt_silences_scope_in_bypass():
+    from pathlib import Path
+    import pentai
+    text = (Path(pentai.__file__).parent / "prompts" / "system.md").read_text().lower()
+    assert "bypass" in text
+    # bypass must tell the model scope is irrelevant and not to mention it
+    assert "scope is not enforced" in text
+    assert "never mention scope" in text
+
 def test_system_prompt_forbids_prose_permission_asking():
     from pathlib import Path
     import pentai
