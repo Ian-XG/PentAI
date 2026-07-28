@@ -23,6 +23,15 @@ def test_render_startup_outputs_key_fields():
     assert "ollama-cloud" in out and "gpt-oss:120b" in out
     assert "20260726_x" in out
 
+def test_render_startup_shows_settings_hint():
+    con = Console(record=True, width=100)
+    render_startup(con, palette=get_palette("green"), provider="ollama-cloud",
+                   model="gpt-oss:120b", playbooks=["recon"], tools=["run_command"],
+                   modes=["ask", "auto", "bypass"], scope_count=1, session_id="20260728_x")
+    out = con.export_text()
+    assert "settings" in out
+    assert "pentai --settings" in out
+
 def test_render_startup_narrow_terminal_has_fields():
     con = Console(record=True, width=48)
     render_startup(con, palette=get_palette("green"), provider="ollama",

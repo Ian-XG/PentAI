@@ -309,6 +309,32 @@ def _capture_console(render_fn: Callable[[Console], None], width: int | None = N
     render_fn(console)
     return buf.getvalue()
 
+def run_settings(prompt_fn: Callable[[str], str], print_fn: Callable[[str], None],
+                 secret_fn: Callable[[str], str] | None = None,
+                 *, current: dict | None = None) -> dict:
+    """Show the current provider, run the provider wizard, and merge the result
+    into the existing config (preserving scope and other providers). Pure w.r.t.
+    disk: callers pass `current` and persist the returned dict themselves."""
+    if current and current.get("active"):
+        active = current["active"]
+        pc = current.get("providers", {}).get(active, {})
+        print_fn(f"current provider: {active}:{pc.get('model', '?')}")
+    else:
+        print_fn("no provider configured yet - let's set one up")
+    wiz = run_wizard(prompt_fn, print_fn, secret_fn)
+    return merge_provider(current, wiz)
+
+def main_settings(argv: list[str] | None = None) -> int:
+    console = Console()
+    merged = run_settings(
+        lambda p: console.input(p, markup=False),
+        lambda m: console.print(m),
+        secret_fn=lambda p: console.input(p, markup=False, password=True),
+        current=read_config_file())
+    path = save_config(merged)
+    console.print(f"[ OK ] saved {path}", markup=False)
+    return 0
+
 def main_tui(argv: list[str]) -> int:
     console = Console()
     session_id = time.strftime("%Y%m%d_%H%M%S")
@@ -481,8 +507,8 @@ def main_tui(argv: list[str]) -> int:
                 # The interactive wizard uses blocking console.input() calls that
                 # would deadlock the full-screen event loop, so it's not run here.
                 output.append(Text(
-                    "setup wizard is not available in --tui mode; run 'pentai --classic' then /setup",
-                    style=palette["alert"]), theme=markdown_theme(palette))
+                    "to change your AI provider, quit (/quit) and run:  pentai --settings",
+                    style=palette["accent"]), theme=markdown_theme(palette))
                 app.invalidate()
                 return
             if result == "__clear__":
@@ -552,4 +578,6 @@ def main_tui(argv: list[str]) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
+    if "--settings" in argv:
+        return main_settings(argv)
     return main_classic(argv) if "--classic" in argv else main_tui(argv)

@@ -53,6 +53,18 @@ def test_help_lists_new_commands():
     for c in ("/clear", "/notes", "/report", "/tools", "/playbooks"):
         assert c in h
 
+def test_settings_alias_returns_setup_sentinel():
+    from pentai.scope import Scope
+    from pentai.commands import handle_slash
+    assert handle_slash("settings", [], scope=Scope([])) == "__setup__"
+
+def test_settings_in_menu_and_help():
+    from pentai.commands import SLASH_COMMANDS, handle_slash
+    from pentai.scope import Scope
+    names = [c for c, _ in SLASH_COMMANDS]
+    assert "/settings" in names
+    assert "/settings" in handle_slash("help", [], scope=Scope([]))
+
 def test_slash_commands_metadata():
     from pentai.commands import SLASH_COMMANDS
     names = [c for c, _ in SLASH_COMMANDS]

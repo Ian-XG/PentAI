@@ -111,6 +111,29 @@ def test_main_defaults_to_tui(monkeypatch):
     cli.main([])
     assert "tui" in calls and "classic" not in calls
 
+def test_main_settings_flag_dispatches(monkeypatch):
+    import pentai.cli as cli
+    calls = {}
+    monkeypatch.setattr(cli, "main_settings", lambda argv=None: calls.setdefault("settings", argv) or 0)
+    monkeypatch.setattr(cli, "main_tui", lambda argv: calls.setdefault("tui", argv) or 0)
+    monkeypatch.setattr(cli, "main_classic", lambda argv=None: calls.setdefault("classic", argv) or 0)
+    cli.main(["--settings"])
+    assert "settings" in calls and "tui" not in calls and "classic" not in calls
+
+def test_run_settings_merges_into_existing_config():
+    from pentai.cli import run_settings
+    current = {"active": "anthropic",
+               "providers": {"anthropic": {"kind": "anthropic", "model": "claude-opus-4"}},
+               "scope": ["10.0.0.0/24"], "palette": "green", "fx": True}
+    answers = iter(["3", ""])  # choose ollama (3), accept default model
+    printed = []
+    merged = run_settings(lambda p: next(answers), lambda m: printed.append(str(m)), current=current)
+    assert merged["active"] == "ollama"                     # switched provider
+    assert merged["scope"] == ["10.0.0.0/24"]               # existing scope preserved
+    assert "ollama" in merged["providers"]                  # new provider added
+    assert "anthropic" in merged["providers"]               # old provider kept
+    assert any("claude-opus-4" in p for p in printed)       # showed current provider
+
 def test_main_classic_flag_dispatches_to_classic(monkeypatch):
     import pentai.cli as cli
     calls = {}
