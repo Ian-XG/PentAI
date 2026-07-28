@@ -3,6 +3,19 @@ from .scope import Scope
 _HELP = ("commands: /scope add <target>, /scope list, /setup, /mode [ask|auto|bypass], "
          "/clear, /notes, /report, /tools, /playbooks [name], /help, /quit")
 
+SLASH_COMMANDS = [
+    ("/scope", "add or list authorized targets"),
+    ("/mode", "switch permission mode (ask / auto / bypass)"),
+    ("/setup", "configure AI provider and key"),
+    ("/clear", "clear the screen"),
+    ("/notes", "show session notes"),
+    ("/report", "show the findings report"),
+    ("/tools", "list agent tools and installed CLI tools"),
+    ("/playbooks", "list playbooks, or /playbooks <name> to show one"),
+    ("/help", "show available commands"),
+    ("/quit", "exit PentAI"),
+]
+
 def parse_slash(line: str) -> tuple[str, list[str]] | None:
     line = line.strip()
     if not line.startswith("/"):

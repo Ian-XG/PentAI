@@ -3,6 +3,7 @@ from typing import Callable
 
 from prompt_toolkit import Application
 from prompt_toolkit.buffer import Buffer
+from prompt_toolkit.completion import Completer, Completion
 from prompt_toolkit.formatted_text import ANSI
 from prompt_toolkit.filters import Condition
 from prompt_toolkit.key_binding import KeyBindings
@@ -13,7 +14,22 @@ from prompt_toolkit.mouse_events import MouseEventType
 from prompt_toolkit.widgets import Frame, TextArea
 from rich.text import Text
 
+from pentai.commands import SLASH_COMMANDS
 from pentai.ui.tui_core import render_to_ansi
+
+
+class SlashCompleter(Completer):
+    """Claude-Code-style '/' menu: typing '/' lists every slash command with
+    a short description alongside it; narrows as more of the name is typed;
+    stops once the first token (command name) is complete and a space follows."""
+
+    def get_completions(self, document, complete_event):
+        text = document.text_before_cursor
+        if not text.startswith("/") or " " in text:
+            return
+        for name, desc in SLASH_COMMANDS:
+            if name.startswith(text):
+                yield Completion(name, start_position=-len(text), display_meta=desc)
 
 
 class OutputBuffer:
@@ -79,7 +95,8 @@ def build_app(*, output: OutputBuffer,
         on_submit(text)
         return False  # clear the input after submit
 
-    input_area = TextArea(prompt="> ", multiline=False, accept_handler=accept)
+    input_area = TextArea(prompt="> ", multiline=False, accept_handler=accept,
+                          completer=SlashCompleter(), complete_while_typing=True)
     input_frame = Frame(input_area, title="message")
 
     def _output_rows() -> int:

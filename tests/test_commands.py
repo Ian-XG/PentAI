@@ -52,3 +52,9 @@ def test_help_lists_new_commands():
     h = handle_slash("help", [], scope=Scope([]))
     for c in ("/clear", "/notes", "/report", "/tools", "/playbooks"):
         assert c in h
+
+def test_slash_commands_metadata():
+    from pentai.commands import SLASH_COMMANDS
+    names = [c for c, _ in SLASH_COMMANDS]
+    assert "/scope" in names and "/quit" in names
+    assert all(desc for _, desc in SLASH_COMMANDS)  # every command has a description

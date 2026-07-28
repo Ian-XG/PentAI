@@ -105,6 +105,49 @@ def test_app_pageup_then_end_headless():
         app.run()
 
 
+def test_slash_completer_offers_matching_commands():
+    from pentai.ui.app import SlashCompleter
+    from prompt_toolkit.document import Document
+    comps = list(SlashCompleter().get_completions(Document("/sc"), None))
+    assert any(c.text == "/scope" for c in comps)
+    scope = next(c for c in comps if c.text == "/scope")
+    assert "authorized targets" in scope.display_meta_text
+
+
+def test_slash_completer_ignores_non_slash():
+    from pentai.ui.app import SlashCompleter
+    from prompt_toolkit.document import Document
+    assert list(SlashCompleter().get_completions(Document("hello there"), None)) == []
+
+
+def test_slash_completer_every_command_has_a_description():
+    from pentai.ui.app import SlashCompleter
+    from prompt_toolkit.document import Document
+    comps = list(SlashCompleter().get_completions(Document("/"), None))
+    assert len(comps) >= 10  # every SLASH_COMMANDS entry matches a bare "/"
+    assert all(c.display_meta_text for c in comps)
+
+
+def test_slash_completer_stops_after_first_token():
+    # once a command name + space is typed, we're into argument territory - stop suggesting commands
+    from pentai.ui.app import SlashCompleter
+    from prompt_toolkit.document import Document
+    doc = Document("/scope add ", cursor_position=len("/scope add "))
+    assert list(SlashCompleter().get_completions(doc, None)) == []
+
+
+def test_slash_completer_wired_into_input_area():
+    from pentai.ui.app import SlashCompleter
+    out = OutputBuffer()
+    with create_pipe_input() as inp:
+        app = build_app(output=out, on_submit=lambda t: None, on_stop=lambda: None,
+                        on_cycle_mode=lambda: None, get_status=lambda: "s",
+                        pt_input=inp, pt_output=DummyOutput())
+        # TextArea wraps the completer in a DynamicCompleter; unwrap to check identity
+        wrapped = app.current_buffer.completer.get_completer()
+        assert isinstance(wrapped, SlashCompleter)
+
+
 def test_app_mouse_support_pageup_then_end_headless():
     # mouse_support is on by default now; verify the app still builds and runs
     # cleanly through the same scroll/jump-to-bottom key sequence with it enabled.
