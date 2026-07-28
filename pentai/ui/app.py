@@ -134,7 +134,7 @@ def build_app(*, output: OutputBuffer,
     )
 
     thinking_bar = ConditionalContainer(
-        content=Window(content=FormattedTextControl(lambda: [("bold", " " + (get_thinking() or "") + " ")]), height=1),
+        content=Window(content=FormattedTextControl(lambda: [("bold ansibrightgreen", " " + (get_thinking() or "") + " ")]), height=1),
         filter=Condition(lambda: get_thinking() is not None),
     )
 
