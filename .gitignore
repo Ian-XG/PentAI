@@ -6,3 +6,9 @@ __pycache__/
 build/
 dist/
 graphify-out/
+
+# never commit real credentials / local config
+.env
+.env.*
+config.yaml
+.pentai/
