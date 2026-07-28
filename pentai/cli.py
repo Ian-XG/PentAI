@@ -510,6 +510,7 @@ def main_tui(argv: list[str]) -> int:
     if not sys.stdout.isatty():
         console.print("[!] --tui needs an interactive terminal; use classic mode (just run pentai).", markup=False)
         return 0
+    console.clear()  # clean launch: no leftover shell prompt above the full-screen app
     try:
         app.run()
     except (EOFError, KeyboardInterrupt):
