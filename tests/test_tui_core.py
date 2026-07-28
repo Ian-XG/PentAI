@@ -19,6 +19,12 @@ def test_render_to_ansi_none_width_uses_terminal():
     out = render_to_ansi("hello sizing")  # width=None -> real terminal width, must still render
     assert "hello sizing" in out
 
+def test_format_thinking():
+    from pentai.ui.tui_core import format_thinking
+    assert format_thinking(0, 3) == "Thinking... (0 tokens - 3s)"
+    assert format_thinking(10800, 78) == "Thinking... (2.7k tokens - 1m 18s)"   # 10800//4=2700
+    assert format_thinking(40, 5) == "Thinking... (10 tokens - 5s)"
+
 def test_turn_queue_fifo_and_blank():
     q = TurnQueue()
     q.enqueue("first"); q.enqueue("   "); q.enqueue("second")

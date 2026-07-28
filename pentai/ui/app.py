@@ -68,6 +68,7 @@ def build_app(*, output: OutputBuffer,
               on_stop: Callable[[], None],
               on_cycle_mode: Callable[[], None],
               get_status: Callable[[], str],
+              get_thinking: Callable[[], str | None] = lambda: None,
               pt_input=None, pt_output=None) -> Application:
 
     scroll = {"offset": 0}
@@ -132,7 +133,12 @@ def build_app(*, output: OutputBuffer,
         height=1,
     )
 
-    root = HSplit([output_window, jump_bar, input_frame, status_window])
+    thinking_bar = ConditionalContainer(
+        content=Window(content=FormattedTextControl(lambda: [("bold", " " + (get_thinking() or "") + " ")]), height=1),
+        filter=Condition(lambda: get_thinking() is not None),
+    )
+
+    root = HSplit([output_window, jump_bar, thinking_bar, input_frame, status_window])
 
     kb = KeyBindings()
 
@@ -173,4 +179,5 @@ def build_app(*, output: OutputBuffer,
         mouse_support=True,
         input=pt_input,
         output=pt_output,
+        refresh_interval=0.5,
     )

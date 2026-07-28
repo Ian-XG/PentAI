@@ -10,6 +10,13 @@ def render_to_ansi(renderable, width: int | None = None, theme=None) -> str:
     console.print(renderable)
     return buf.getvalue()
 
+def format_thinking(chars: int, elapsed_seconds: float) -> str:
+    tokens = chars // 4  # rough token estimate from streamed characters
+    tok = f"{tokens/1000:.1f}k" if tokens >= 1000 else str(tokens)
+    secs = int(elapsed_seconds)
+    t = f"{secs//60}m {secs%60}s" if secs >= 60 else f"{secs}s"
+    return f"Thinking... ({tok} tokens - {t})"
+
 class TurnQueue:
     def __init__(self) -> None:
         self._items: list[str] = []

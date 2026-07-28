@@ -347,6 +347,14 @@ def main_tui(argv: list[str]) -> int:
 
     mode_ref = {"mode": "bypass"}
     cmds_ref = {"n": 0}
+    thinking = {"start": None, "chars": 0}
+
+    def get_thinking():
+        if thinking["start"] is None:
+            return None
+        from .ui.tui_core import format_thinking
+        import time as _t
+        return format_thinking(thinking["chars"], _t.time() - thinking["start"])
 
     def _run_on_loop(fn: Callable[[], None]) -> None:
         app.loop.call_soon_threadsafe(fn)
@@ -380,6 +388,8 @@ def main_tui(argv: list[str]) -> int:
                         context_provider=lambda: session_context(scope.entries, mode_ref["mode"], os.getcwd(), installed_tools))
 
     def _start_turn(text: str) -> None:
+        thinking["start"] = time.time()
+        thinking["chars"] = 0
         def worker() -> None:
             buf: list[str] = []
             def flush() -> None:
@@ -393,6 +403,7 @@ def main_tui(argv: list[str]) -> int:
                         break
                     if isinstance(ev, TextDelta):
                         buf.append(ev.text)
+                        thinking["chars"] += len(ev.text)
                     elif isinstance(ev, ToolInvocation):
                         flush()
                         cmd = ev.arguments.get("command", ev.arguments)
@@ -412,6 +423,7 @@ def main_tui(argv: list[str]) -> int:
                 flush()
             finally:
                 def _done() -> None:
+                    thinking["start"] = None
                     controller.finish()
                     app.invalidate()
                 _run_on_loop(_done)
@@ -505,7 +517,7 @@ def main_tui(argv: list[str]) -> int:
                 f"cmds:{cmds_ref['n']}  queued:{len(controller.queue)}  (shift+tab mode, esc stop, /quit)")
 
     app = build_app(output=output, on_submit=_on_submit, on_stop=controller.stop,
-                    on_cycle_mode=_cycle_mode, get_status=_status)
+                    on_cycle_mode=_cycle_mode, get_status=_status, get_thinking=get_thinking)
 
     if not sys.stdout.isatty():
         console.print("[!] --tui needs an interactive terminal; use classic mode (just run pentai).", markup=False)
