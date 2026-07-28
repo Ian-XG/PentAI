@@ -46,6 +46,22 @@ def build_config(choice: ProviderChoice, *, model: str, api_key: str | None = No
     return {"active": choice.name, "palette": "green", "fx": True, "scope": [],
             "providers": {choice.name: pc}}
 
+def prompt_provider_details(choice: ProviderChoice, prompt_fn: Callable[[str], str],
+                            secret_fn: Callable[[str], str] | None = None) -> dict:
+    """Given an already-chosen provider, ask the remaining questions (base URL if
+    needed, model with default, masked API key if needed) and build its config.
+    Shared by the classic numbered run_wizard() and the interactive select() path
+    in cli.py so both end the same way."""
+    base_url = None
+    if choice.needs_base_url:
+        base_url = prompt_fn("Base URL (OpenAI-compatible): ").strip() or None
+    model = prompt_fn(f"Model [{choice.default_model}]: ").strip() or choice.default_model
+    api_key = None
+    if choice.needs_key:
+        ask_key = secret_fn or prompt_fn
+        api_key = ask_key(f"Paste your {choice.api_key_env}: ").strip() or None
+    return build_config(choice, model=model, api_key=api_key, base_url=base_url)
+
 def run_wizard(prompt_fn: Callable[[str], str], print_fn: Callable[[str], None],
                secret_fn: Callable[[str], str] | None = None, *,
                render_menu: Callable[[], None] | None = None) -> dict:
@@ -66,15 +82,7 @@ def run_wizard(prompt_fn: Callable[[str], str], print_fn: Callable[[str], None],
             choice = PROVIDER_CHOICES[int(raw) - 1]
         else:
             print_fn(f"Enter a number 1-{len(PROVIDER_CHOICES)}.")
-    base_url = None
-    if choice.needs_base_url:
-        base_url = prompt_fn("Base URL (OpenAI-compatible): ").strip() or None
-    model = prompt_fn(f"Model [{choice.default_model}]: ").strip() or choice.default_model
-    api_key = None
-    if choice.needs_key:
-        ask_key = secret_fn or prompt_fn
-        api_key = ask_key(f"Paste your {choice.api_key_env}: ").strip() or None
-    return build_config(choice, model=model, api_key=api_key, base_url=base_url)
+    return prompt_provider_details(choice, prompt_fn, secret_fn)
 
 def merge_provider(base: dict | None, new: dict) -> dict:
     """Merge a single-provider wizard config `new` into an existing config `base`,

@@ -17,7 +17,9 @@ from rich.markdown import Markdown
 from rich.live import Live
 from rich.text import Text
 from .config import Config, load_config, load_config_file, default_config
-from .onboarding import needs_onboarding, run_wizard, save_config, merge_provider, read_config_file
+from .onboarding import (needs_onboarding, run_wizard, save_config, merge_provider,
+                         read_config_file, PROVIDER_CHOICES, ProviderChoice,
+                         prompt_provider_details)
 from .scope import Scope
 from .providers.factory import build_provider
 from .agent import Agent, ToolSpec, ToolInvocation
@@ -33,6 +35,7 @@ from .ui.animations import run_once, glitch_frames
 from .ui.banner import boot_lines, SIGIL
 from .ui.startup import render_startup, render_toolcheck
 from .ui.settings import render_provider_menu
+from .ui.select import select
 from .ui.render import markdown_theme
 from .ui.mdtable import md
 from .ui.toolfmt import format_command_output
@@ -351,6 +354,13 @@ def run_settings(prompt_fn: Callable[[str], str], print_fn: Callable[[str], None
     wiz = run_wizard(prompt_fn, print_fn, secret_fn, render_menu=render_menu)
     return merge_provider(current, wiz)
 
+def _provider_row(c: ProviderChoice, current_active: str | None) -> str:
+    tag = "  ● current" if c.name == current_active else ""
+    return f"{c.icon}  {c.name:<14}{c.label}{tag}"
+
+def _provider_start_index(active: str | None) -> int:
+    return next((i for i, c in enumerate(PROVIDER_CHOICES) if c.name == active), 0)
+
 def main_settings(argv: list[str] | None = None) -> int:
     console = Console()
     current = read_config_file()
@@ -358,12 +368,31 @@ def main_settings(argv: list[str] | None = None) -> int:
     console.push_theme(markdown_theme(palette))
     active = current.get("active") if current else None
     try:
-        merged = run_settings(
-            lambda p: console.input(p, markup=False),
-            lambda m: console.print(m),
-            secret_fn=lambda p: console.input(p, markup=False, password=True),
-            current=current,
-            render_menu=lambda: render_provider_menu(console, palette, active))
+        if sys.stdout.isatty():
+            # arrow-key picker (like Claude Code / OpenClaw / Hermes Agent) - only
+            # makes sense with a real interactive terminal attached.
+            idx = select(PROVIDER_CHOICES,
+                        title="PentAI · Settings — choose your AI provider",
+                        render_row=lambda c, is_sel: _provider_row(c, active),
+                        active_index=_provider_start_index(active),
+                        palette=palette)
+            if idx is None:
+                console.print("cancelled, no changes saved", style=palette["dim"])
+                return 0
+            wiz = prompt_provider_details(
+                PROVIDER_CHOICES[idx],
+                lambda p: console.input(p, markup=False),
+                secret_fn=lambda p: console.input(p, markup=False, password=True))
+            merged = merge_provider(current, wiz)
+        else:
+            # non-tty (tests, pipes, non-interactive shells): fall back to the
+            # plain/rich text menu - never try to run the interactive app.
+            merged = run_settings(
+                lambda p: console.input(p, markup=False),
+                lambda m: console.print(m),
+                secret_fn=lambda p: console.input(p, markup=False, password=True),
+                current=current,
+                render_menu=lambda: render_provider_menu(console, palette, active))
     except (KeyboardInterrupt, EOFError):
         console.print("\ncancelled, no changes saved", style=palette["dim"])
         return 0

@@ -179,6 +179,65 @@ def test_main_settings_shows_polished_menu_with_icons(monkeypatch, capsys):
     assert "Settings" in out
     assert "◆" in out   # anthropic's icon
 
+def test_provider_row_tags_current_provider():
+    from pentai.cli import _provider_row
+    from pentai.onboarding import PROVIDER_CHOICES
+    ollama = next(c for c in PROVIDER_CHOICES if c.name == "ollama")
+    row = _provider_row(ollama, "ollama")
+    assert "current" in row
+    assert ollama.icon in row
+    assert ollama.name in row
+
+def test_provider_row_no_tag_when_not_current():
+    from pentai.cli import _provider_row
+    from pentai.onboarding import PROVIDER_CHOICES
+    ollama = next(c for c in PROVIDER_CHOICES if c.name == "ollama")
+    row = _provider_row(ollama, "anthropic")
+    assert "current" not in row
+
+def test_provider_start_index_finds_active():
+    from pentai.cli import _provider_start_index
+    assert _provider_start_index("ollama") == 2
+    assert _provider_start_index("nonexistent") == 0
+    assert _provider_start_index(None) == 0
+
+def test_main_settings_uses_interactive_select_when_tty(monkeypatch, capsys):
+    # when stdout IS a tty, main_settings must use the arrow-key select() picker,
+    # not the plain/rich text menu - stub select() to avoid a real interactive app.
+    import sys
+    import pentai.cli as cli
+    from rich.console import Console
+    monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
+    calls = {}
+    def fake_select(options, **kw):
+        calls["options"] = options
+        calls["kw"] = kw
+        return 2   # ollama - needs no base_url and no api key
+    monkeypatch.setattr(cli, "select", fake_select)
+    monkeypatch.setattr(cli, "read_config_file", lambda: None)
+    monkeypatch.setattr(cli, "save_config", lambda cfg: __import__("pathlib").Path("/tmp/x"))
+    answers = iter([""])  # accept default model
+    monkeypatch.setattr(Console, "input", lambda self, *a, **k: next(answers))
+    rc = cli.main_settings([])
+    assert rc == 0
+    assert calls["options"] == cli.PROVIDER_CHOICES
+    out = capsys.readouterr().out
+    assert "OK" in out
+
+def test_main_settings_tty_select_cancelled_returns_zero_no_save(monkeypatch, capsys):
+    import sys
+    import pentai.cli as cli
+    monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
+    monkeypatch.setattr(cli, "select", lambda options, **kw: None)
+    monkeypatch.setattr(cli, "read_config_file", lambda: None)
+    saved = []
+    monkeypatch.setattr(cli, "save_config", lambda cfg: saved.append(cfg))
+    rc = cli.main_settings([])
+    assert rc == 0
+    assert saved == []   # nothing persisted on cancel
+    out = capsys.readouterr().out
+    assert "cancelled" in out.lower()
+
 def test_main_classic_flag_dispatches_to_classic(monkeypatch):
     import pentai.cli as cli
     calls = {}
