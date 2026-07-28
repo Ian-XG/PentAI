@@ -87,3 +87,23 @@ def test_app_pageup_then_end_headless():
         inp.send_text("\x1b[F")    # End (jump to bottom)
         inp.send_text("\x03")      # Ctrl-C exit
         app.run()
+
+
+def test_app_mouse_support_pageup_then_end_headless():
+    # mouse_support is on by default now; verify the app still builds and runs
+    # cleanly through the same scroll/jump-to-bottom key sequence with it enabled.
+    from prompt_toolkit.input.defaults import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+    from rich.text import Text
+    out = OutputBuffer()
+    for i in range(200):
+        out.append(Text(str(i)))  # long content
+    with create_pipe_input() as inp:
+        app = build_app(output=out, on_submit=lambda t: None, on_stop=lambda: None,
+                        on_cycle_mode=lambda: None, get_status=lambda: "s",
+                        pt_input=inp, pt_output=DummyOutput())
+        assert app.mouse_support()
+        inp.send_text("\x1b[5~")   # PageUp -> offset > 0, jump bar becomes visible
+        inp.send_text("\x1b[F")    # End -> back to offset 0
+        inp.send_text("\x03")      # Ctrl-C exit
+        app.run()

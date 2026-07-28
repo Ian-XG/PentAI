@@ -4,9 +4,11 @@ from typing import Callable
 from prompt_toolkit import Application
 from prompt_toolkit.buffer import Buffer
 from prompt_toolkit.formatted_text import ANSI
+from prompt_toolkit.filters import Condition
 from prompt_toolkit.key_binding import KeyBindings
-from prompt_toolkit.layout import Layout, HSplit, Window
+from prompt_toolkit.layout import ConditionalContainer, Layout, HSplit, Window
 from prompt_toolkit.layout.controls import FormattedTextControl
+from prompt_toolkit.mouse_events import MouseEventType
 from prompt_toolkit.widgets import Frame, TextArea
 from rich.text import Text
 
@@ -73,16 +75,51 @@ def build_app(*, output: OutputBuffer,
     def _output_width() -> int:
         return max(20, shutil.get_terminal_size((100, 24)).columns)
 
+    def _max_offset() -> int:
+        return max(0, output.line_count(_output_width()) - _output_rows())
+
+    def _scroll_up(n: int = 3) -> None:
+        scroll["offset"] = min(_max_offset(), scroll["offset"] + n)
+
+    def _scroll_down(n: int = 3) -> None:
+        scroll["offset"] = max(0, scroll["offset"] - n)
+
+    def _to_bottom() -> None:
+        scroll["offset"] = 0
+
+    def _output_mouse(mouse_event):
+        if mouse_event.event_type == MouseEventType.SCROLL_UP:
+            _scroll_up()
+        elif mouse_event.event_type == MouseEventType.SCROLL_DOWN:
+            _scroll_down()
+        else:
+            return NotImplemented
+        return None
+
     output_control = FormattedTextControl(
         lambda: ANSI(output.visible(_output_rows(), scroll["offset"], _output_width())), focusable=False
     )
+    output_control.mouse_handler = _output_mouse
     output_window = Window(content=output_control, wrap_lines=True)
+
+    def _jump_fragments():
+        def handler(mouse_event):
+            if mouse_event.event_type == MouseEventType.MOUSE_UP:
+                _to_bottom()
+            return None
+        return [("reverse bold", " ↓ Jump to bottom (End) ", handler)]
+
+    jump_bar = ConditionalContainer(
+        content=Window(content=FormattedTextControl(_jump_fragments), height=1),
+        filter=Condition(lambda: scroll["offset"] > 0),
+    )
+
     status_window = Window(
         content=FormattedTextControl(lambda: get_status()),
         height=1,
     )
 
-    root = HSplit([output_window, input_frame, status_window])
+    root = HSplit([output_window, jump_bar, input_frame, status_window])
 
     kb = KeyBindings()
 
@@ -102,27 +139,25 @@ def build_app(*, output: OutputBuffer,
 
     @kb.add("pageup")
     def _(event) -> None:
-        rows = _output_rows()
-        max_offset = max(0, output.line_count(_output_width()) - rows)
-        scroll["offset"] = min(scroll["offset"] + rows, max_offset)
+        _scroll_up(_output_rows())
         event.app.invalidate()
 
     @kb.add("pagedown")
     def _(event) -> None:
-        scroll["offset"] = max(0, scroll["offset"] - _output_rows())
+        _scroll_down(_output_rows())
         event.app.invalidate()
 
     @kb.add("end")
     @kb.add("c-e")
     def _(event) -> None:
-        scroll["offset"] = 0
+        _to_bottom()
         event.app.invalidate()
 
     return Application(
         layout=Layout(root, focused_element=input_area),
         key_bindings=kb,
         full_screen=True,
-        mouse_support=False,
+        mouse_support=True,
         input=pt_input,
         output=pt_output,
     )
