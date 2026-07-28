@@ -19,6 +19,7 @@ def markdown_theme(palette: dict[str, str]) -> Theme:
         "markdown.item.number": accent,
         "markdown.item.bullet": accent,
         "markdown.table.header": f"bold {accent}",
+        "markdown.table.border": accent,
         "markdown.hr": dim,
         "markdown.code": accent,
         "markdown.link": accent,

@@ -33,6 +33,7 @@ from .ui.animations import run_once, glitch_frames
 from .ui.banner import boot_lines, SIGIL
 from .ui.startup import render_startup, render_toolcheck
 from .ui.render import markdown_theme
+from .ui.mdtable import md
 from .ui.toolfmt import format_command_output
 from .ui.app import build_app, OutputBuffer
 from .ui.runner import TurnController
@@ -409,7 +410,7 @@ def main_tui(argv: list[str]) -> int:
                 _run_on_loop(_append_note)
             elif ev.name == "load_playbook":
                 def _append_playbook(result: str = ev.result) -> None:
-                    output.append(Markdown(result), theme=markdown_theme(palette))
+                    output.append(md(result), theme=markdown_theme(palette))
                     app.invalidate()
                 _run_on_loop(_append_playbook)
             else:
@@ -422,9 +423,9 @@ def main_tui(argv: list[str]) -> int:
             buf: list[str] = []
             def flush() -> None:
                 if buf:
-                    md = Markdown("".join(buf))
+                    rendered = md("".join(buf))
                     buf.clear()
-                    _post(md, theme=markdown_theme(palette))
+                    _post(rendered, theme=markdown_theme(palette))
             try:
                 for ev in agent.send(text):
                     if controller.stopped:
@@ -491,7 +492,7 @@ def main_tui(argv: list[str]) -> int:
             if result == "__notes__":
                 notes = session_dir / "notes.md"
                 if notes.exists():
-                    output.append(Markdown(notes.read_text()), theme=markdown_theme(palette))
+                    output.append(md(notes.read_text()), theme=markdown_theme(palette))
                 else:
                     output.append(Text("[no notes yet]", style=palette["dim"]),
                         theme=markdown_theme(palette))
@@ -500,7 +501,7 @@ def main_tui(argv: list[str]) -> int:
             if result == "__report__":
                 notes = session_dir / "notes.md"
                 if notes.exists():
-                    output.append(Markdown("# PentAI Session Report\n\n" + notes.read_text()),
+                    output.append(md("# PentAI Session Report\n\n" + notes.read_text()),
                         theme=markdown_theme(palette))
                 else:
                     output.append(Text(
@@ -516,7 +517,7 @@ def main_tui(argv: list[str]) -> int:
                 return
             if result == "__playbooks__":
                 if args:
-                    output.append(Markdown(load_playbook(args[0], skills_dir=_SKILLS_DIR)),
+                    output.append(md(load_playbook(args[0], skills_dir=_SKILLS_DIR)),
                         theme=markdown_theme(palette))
                 else:
                     names = list_playbooks(_SKILLS_DIR)
