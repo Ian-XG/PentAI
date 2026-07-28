@@ -16,20 +16,21 @@ class ProviderChoice:
     api_key_env: str | None = None
     needs_key: bool = True
     needs_base_url: bool = False
+    icon: str = "*"
 
 PROVIDER_CHOICES: list[ProviderChoice] = [
     ProviderChoice("anthropic", "Anthropic (Claude) - powerful, paid API", "anthropic",
-                   "claude-opus-4", api_key_env="ANTHROPIC_API_KEY"),
+                   "claude-opus-4", api_key_env="ANTHROPIC_API_KEY", icon="◆"),
     ProviderChoice("openai", "OpenAI (GPT) - paid API", "openai_compat",
                    "gpt-4o", base_url="https://api.openai.com/v1",
-                   api_key_env="OPENAI_API_KEY"),
+                   api_key_env="OPENAI_API_KEY", icon="●"),
     ProviderChoice("ollama", "Ollama local - free, runs on your machine", "openai_compat",
-                   "llama3.1", base_url="http://localhost:11434/v1", needs_key=False),
+                   "llama3.1", base_url="http://localhost:11434/v1", needs_key=False, icon="▲"),
     ProviderChoice("ollama-cloud", "Ollama Cloud - hosted large models", "openai_compat",
                    "gpt-oss:120b", base_url="https://ollama.com/v1",
-                   api_key_env="OLLAMA_API_KEY"),
+                   api_key_env="OLLAMA_API_KEY", icon="△"),
     ProviderChoice("custom", "Other (OpenAI-compatible: Groq, OpenRouter, ...)",
-                   "openai_compat", "", api_key_env="OPENAI_API_KEY", needs_base_url=True),
+                   "openai_compat", "", api_key_env="OPENAI_API_KEY", needs_base_url=True, icon="◇"),
 ]
 
 def build_config(choice: ProviderChoice, *, model: str, api_key: str | None = None,
@@ -46,10 +47,18 @@ def build_config(choice: ProviderChoice, *, model: str, api_key: str | None = No
             "providers": {choice.name: pc}}
 
 def run_wizard(prompt_fn: Callable[[str], str], print_fn: Callable[[str], None],
-               secret_fn: Callable[[str], str] | None = None) -> dict:
-    print_fn("PentAI setup - choose your AI provider:")
-    for i, c in enumerate(PROVIDER_CHOICES, 1):
-        print_fn(f"  {i}) {c.label}")
+               secret_fn: Callable[[str], str] | None = None, *,
+               render_menu: Callable[[], None] | None = None) -> dict:
+    """Run the interactive provider wizard. `render_menu`, if given, replaces the
+    default plain numbered-list printout (e.g. with a polished rich panel/table) -
+    the selection/prompt logic below is unchanged either way, so it stays testable
+    with plain prompt_fn/print_fn callbacks regardless of which menu is shown."""
+    if render_menu is not None:
+        render_menu()
+    else:
+        print_fn("PentAI setup - choose your AI provider:")
+        for i, c in enumerate(PROVIDER_CHOICES, 1):
+            print_fn(f"  {i}) {c.label}")
     choice = None
     while choice is None:
         raw = prompt_fn("> ").strip()

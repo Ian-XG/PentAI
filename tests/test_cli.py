@@ -141,6 +141,44 @@ def test_run_settings_merges_into_existing_config():
     assert "anthropic" in merged["providers"]               # old provider kept
     assert any("claude-opus-4" in p for p in printed)       # showed current provider
 
+def test_main_settings_keyboard_interrupt_exits_cleanly(monkeypatch, capsys):
+    # Ctrl-C during the wizard must not dump a traceback: catch it, print a
+    # calm cancellation message, and return 0.
+    import pentai.cli as cli
+    from rich.console import Console
+    monkeypatch.setattr(cli, "read_config_file", lambda: None)
+    monkeypatch.setattr(Console, "input", lambda self, *a, **k: (_ for _ in ()).throw(KeyboardInterrupt()))
+    rc = cli.main_settings([])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "cancelled" in out.lower()
+    assert "traceback" not in out.lower()
+
+def test_main_settings_eof_exits_cleanly(monkeypatch, capsys):
+    import pentai.cli as cli
+    from rich.console import Console
+    monkeypatch.setattr(cli, "read_config_file", lambda: None)
+    monkeypatch.setattr(Console, "input", lambda self, *a, **k: (_ for _ in ()).throw(EOFError()))
+    rc = cli.main_settings([])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "cancelled" in out.lower()
+
+def test_main_settings_shows_polished_menu_with_icons(monkeypatch, capsys):
+    # main_settings wires render_menu through to render_provider_menu (the
+    # polished panel/table), not the plain numbered list.
+    import pentai.cli as cli
+    from rich.console import Console
+    answers = iter(["1", "", "sk-ant-abc"])   # choose anthropic, default model, key
+    monkeypatch.setattr(cli, "read_config_file", lambda: None)
+    monkeypatch.setattr(cli, "save_config", lambda cfg: __import__("pathlib").Path("/tmp/x"))
+    monkeypatch.setattr(Console, "input", lambda self, *a, **k: next(answers))
+    rc = cli.main_settings([])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "Settings" in out
+    assert "◆" in out   # anthropic's icon
+
 def test_main_classic_flag_dispatches_to_classic(monkeypatch):
     import pentai.cli as cli
     calls = {}

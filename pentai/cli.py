@@ -32,6 +32,7 @@ from .ui.theme import get_palette
 from .ui.animations import run_once, glitch_frames
 from .ui.banner import boot_lines, SIGIL
 from .ui.startup import render_startup, render_toolcheck
+from .ui.settings import render_provider_menu
 from .ui.render import markdown_theme
 from .ui.mdtable import md
 from .ui.toolfmt import format_command_output
@@ -135,9 +136,15 @@ def main_classic(argv: list[str] | None = None) -> int:
     console = Console()
     session_id = time.strftime("%Y%m%d_%H%M%S")
     if needs_onboarding():
-        cfg_dict = run_wizard(lambda p: console.input(p, markup=False),
-                              lambda m: console.print(m),
-                              secret_fn=lambda p: console.input(p, markup=False, password=True))
+        onboard_palette = get_palette("green")
+        try:
+            cfg_dict = run_wizard(lambda p: console.input(p, markup=False),
+                                  lambda m: console.print(m),
+                                  secret_fn=lambda p: console.input(p, markup=False, password=True),
+                                  render_menu=lambda: render_provider_menu(console, onboard_palette, None))
+        except (KeyboardInterrupt, EOFError):
+            console.print("\ncancelled, no changes saved", style=onboard_palette["dim"])
+            return 0
         save_config(cfg_dict)
     cfg_error: Exception | None = None
     try:
@@ -217,9 +224,14 @@ def main_classic(argv: list[str] | None = None) -> int:
             if result == "__quit__":
                 break
             if result == "__setup__":
-                wiz = run_wizard(lambda p: console.input(p, markup=False),
-                                 lambda m: console.print(m, style=palette["accent"]),
-                                 secret_fn=lambda p: console.input(p, markup=False, password=True))
+                try:
+                    wiz = run_wizard(lambda p: console.input(p, markup=False),
+                                     lambda m: console.print(m, style=palette["accent"]),
+                                     secret_fn=lambda p: console.input(p, markup=False, password=True),
+                                     render_menu=lambda: render_provider_menu(console, palette, cfg.active))
+                except (KeyboardInterrupt, EOFError):
+                    console.print("\ncancelled, no changes saved", style=palette["dim"])
+                    continue
                 merged = merge_provider(read_config_file(), wiz)
                 save_config(merged)
                 cfg = load_config_file()
@@ -322,37 +334,56 @@ def _restore_terminal() -> None:
 
 def run_settings(prompt_fn: Callable[[str], str], print_fn: Callable[[str], None],
                  secret_fn: Callable[[str], str] | None = None,
-                 *, current: dict | None = None) -> dict:
+                 *, current: dict | None = None,
+                 render_menu: Callable[[], None] | None = None) -> dict:
     """Show the current provider, run the provider wizard, and merge the result
     into the existing config (preserving scope and other providers). Pure w.r.t.
-    disk: callers pass `current` and persist the returned dict themselves."""
-    if current and current.get("active"):
-        active = current["active"]
-        pc = current.get("providers", {}).get(active, {})
-        print_fn(f"current provider: {active}:{pc.get('model', '?')}")
-    else:
-        print_fn("no provider configured yet - let's set one up")
-    wiz = run_wizard(prompt_fn, print_fn, secret_fn)
+    disk: callers pass `current` and persist the returned dict themselves.
+    `render_menu`, if given, draws the polished panel/table (which already shows
+    the current provider), so the plain "current provider: ..." line is skipped."""
+    if render_menu is None:
+        if current and current.get("active"):
+            active = current["active"]
+            pc = current.get("providers", {}).get(active, {})
+            print_fn(f"current provider: {active}:{pc.get('model', '?')}")
+        else:
+            print_fn("no provider configured yet - let's set one up")
+    wiz = run_wizard(prompt_fn, print_fn, secret_fn, render_menu=render_menu)
     return merge_provider(current, wiz)
 
 def main_settings(argv: list[str] | None = None) -> int:
     console = Console()
-    merged = run_settings(
-        lambda p: console.input(p, markup=False),
-        lambda m: console.print(m),
-        secret_fn=lambda p: console.input(p, markup=False, password=True),
-        current=read_config_file())
+    current = read_config_file()
+    palette = get_palette((current or {}).get("palette", "green"))
+    console.push_theme(markdown_theme(palette))
+    active = current.get("active") if current else None
+    try:
+        merged = run_settings(
+            lambda p: console.input(p, markup=False),
+            lambda m: console.print(m),
+            secret_fn=lambda p: console.input(p, markup=False, password=True),
+            current=current,
+            render_menu=lambda: render_provider_menu(console, palette, active))
+    except (KeyboardInterrupt, EOFError):
+        console.print("\ncancelled, no changes saved", style=palette["dim"])
+        return 0
     path = save_config(merged)
-    console.print(f"[ OK ] saved {path}", markup=False)
+    console.print(f"[ OK ] saved {path}", style=palette["accent"])
     return 0
 
 def main_tui(argv: list[str]) -> int:
     console = Console()
     session_id = time.strftime("%Y%m%d_%H%M%S")
     if needs_onboarding():
-        cfg_dict = run_wizard(lambda p: console.input(p, markup=False),
-                              lambda m: console.print(m),
-                              secret_fn=lambda p: console.input(p, markup=False, password=True))
+        onboard_palette = get_palette("green")
+        try:
+            cfg_dict = run_wizard(lambda p: console.input(p, markup=False),
+                                  lambda m: console.print(m),
+                                  secret_fn=lambda p: console.input(p, markup=False, password=True),
+                                  render_menu=lambda: render_provider_menu(console, onboard_palette, None))
+        except (KeyboardInterrupt, EOFError):
+            console.print("\ncancelled, no changes saved", style=onboard_palette["dim"])
+            return 0
         save_config(cfg_dict)
     cfg_error: Exception | None = None
     try:

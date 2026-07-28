@@ -7,6 +7,10 @@ def test_five_choices_in_order():
     names = [c.name for c in PROVIDER_CHOICES]
     assert names == ["anthropic", "openai", "ollama", "ollama-cloud", "custom"]
 
+def test_every_provider_choice_has_an_icon():
+    for c in PROVIDER_CHOICES:
+        assert c.icon
+
 def test_build_config_anthropic():
     c = next(c for c in PROVIDER_CHOICES if c.name == "anthropic")
     cfg = build_config(c, model="claude-opus-4", api_key="sk-ant-x")
@@ -95,3 +99,21 @@ def test_run_wizard_uses_secret_fn_for_key():
                      secret_fn=lambda p: secrets.append(p) or "sk-secret")
     assert cfg["providers"]["anthropic"]["api_key"] == "sk-secret"
     assert secrets and "ANTHROPIC_API_KEY" in secrets[0]
+
+def test_run_wizard_uses_render_menu_instead_of_plain_list():
+    # when render_menu is given (the polished rich panel/table), the plain
+    # "N) label" printout is skipped - selection logic is unchanged either way
+    answers = iter(["1", "", "sk-ant-abc"])   # choose anthropic, default model, key
+    printed = []
+    rendered = []
+    cfg = run_wizard(lambda p: next(answers), lambda m: printed.append(m),
+                     render_menu=lambda: rendered.append(1))
+    assert rendered == [1]
+    assert cfg["active"] == "anthropic"
+    assert not any(") " in m for m in printed)   # no plain numbered list lines
+
+def test_run_wizard_default_menu_unchanged_without_render_menu():
+    answers = iter(["1", "", "sk-ant-abc"])
+    printed = []
+    run_wizard(lambda p: next(answers), lambda m: printed.append(m))
+    assert any("1)" in m for m in printed)   # plain numbered list still shown by default
