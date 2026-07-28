@@ -41,6 +41,22 @@ def test_output_buffer_clear():
     assert b.render(80) == ""
 
 
+def test_output_buffer_caches_and_invalidates():
+    calls = {"n": 0}
+    b = OutputBuffer()
+    def counting_renderer(w):
+        calls["n"] += 1
+        return "x\n"
+    b.append_renderer(counting_renderer)
+    b.render(80); b.render(80)               # same width + no new content -> render fn called once
+    assert calls["n"] == 1
+    b.render(100)                             # width changed -> recompute
+    assert calls["n"] == 2
+    b.append_renderer(counting_renderer)      # new content -> next render recomputes
+    b.render(100)
+    assert calls["n"] == 4                    # both renderers called (2 items) on recompute
+
+
 def test_app_submit_then_exit_headless():
     submitted = []
     out = OutputBuffer()

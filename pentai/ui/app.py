@@ -7,6 +7,7 @@ from prompt_toolkit.formatted_text import ANSI
 from prompt_toolkit.filters import Condition
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.layout import ConditionalContainer, Layout, HSplit, Window
+from prompt_toolkit.layout.containers import WindowAlign
 from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.mouse_events import MouseEventType
 from prompt_toolkit.widgets import Frame, TextArea
@@ -18,23 +19,35 @@ from pentai.ui.tui_core import render_to_ansi
 class OutputBuffer:
     def __init__(self) -> None:
         self._renderers: list = []
+        self._version = 0
+        self._cache_width = None
+        self._cache_version = -1
+        self._cache_text = ""
 
     def append_renderer(self, fn) -> None:
         # fn: Callable[[int], str] rendering ANSI at the given width
         self._renderers.append(fn)
+        self._version += 1
 
     def append(self, renderable, theme=None) -> None:
-        self._renderers.append(lambda w, r=renderable, t=theme: render_to_ansi(r, width=w, theme=t))
+        self.append_renderer(lambda w, r=renderable, t=theme: render_to_ansi(r, width=w, theme=t))
 
     def append_full_width(self, text: str, style: str) -> None:
         # a highlight bar padded to the CURRENT width at render time (so it reflows on resize)
-        self._renderers.append(lambda w, s=text, st=style: render_to_ansi(Text(s.ljust(w), style=st), width=w))
-
-    def render(self, width: int) -> str:
-        return "".join(fn(width) for fn in self._renderers)
+        self.append_renderer(lambda w, s=text, st=style: render_to_ansi(Text(s.ljust(w), style=st), width=w))
 
     def clear(self) -> None:
         self._renderers.clear()
+        self._version += 1
+
+    def render(self, width: int) -> str:
+        if width == self._cache_width and self._version == self._cache_version:
+            return self._cache_text
+        text = "".join(fn(width) for fn in self._renderers)
+        self._cache_width = width
+        self._cache_version = self._version
+        self._cache_text = text
+        return text
 
     def line_count(self, width: int) -> int:
         return self.render(width).count("\n") + 1
@@ -110,7 +123,7 @@ def build_app(*, output: OutputBuffer,
         return [("reverse bold", " ↓ Jump to bottom (End) ", handler)]
 
     jump_bar = ConditionalContainer(
-        content=Window(content=FormattedTextControl(_jump_fragments), height=1),
+        content=Window(content=FormattedTextControl(_jump_fragments), height=1, align=WindowAlign.CENTER),
         filter=Condition(lambda: scroll["offset"] > 0),
     )
 
