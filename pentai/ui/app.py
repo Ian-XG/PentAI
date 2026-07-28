@@ -12,11 +12,25 @@ from prompt_toolkit.layout.containers import WindowAlign, FloatContainer, Float
 from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.layout.menus import CompletionsMenu
 from prompt_toolkit.mouse_events import MouseEventType
+from prompt_toolkit.styles import Style
 from prompt_toolkit.widgets import Frame, TextArea
 from rich.text import Text
 
 from pentai.commands import SLASH_COMMANDS
 from pentai.ui.tui_core import render_to_ansi
+
+# Phosphor-green theme for the "/" completion dropdown, so it matches the TUI
+# instead of prompt_toolkit's default light-gray menu. Selected row is inverted
+# (dark on green); descriptions render dim; scrollbar picks up the accent.
+MENU_STYLE = Style.from_dict({
+    "completion-menu": "bg:#0a0f0a",
+    "completion-menu.completion": "bg:#0a0f0a #46e08a",
+    "completion-menu.completion.current": "bg:#46e08a #05070a bold",
+    "completion-menu.meta.completion": "bg:#0a0f0a #2f7d54",
+    "completion-menu.meta.completion.current": "bg:#2f7d54 #d7ffe6",
+    "scrollbar.background": "bg:#12321f",
+    "scrollbar.button": "bg:#46e08a",
+})
 
 
 class SlashCompleter(Completer):
@@ -201,6 +215,7 @@ def build_app(*, output: OutputBuffer,
     return Application(
         layout=Layout(root, focused_element=input_area),
         key_bindings=kb,
+        style=MENU_STYLE,
         full_screen=True,
         mouse_support=True,
         input=pt_input,

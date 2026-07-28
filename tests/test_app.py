@@ -148,6 +148,25 @@ def test_slash_completer_wired_into_input_area():
         assert isinstance(wrapped, SlashCompleter)
 
 
+def test_completion_menu_is_themed_phosphor_green():
+    # the "/" dropdown must not fall back to prompt_toolkit's default gray box
+    from pentai.ui.app import MENU_STYLE
+    sel = MENU_STYLE.get_attrs_for_style_str("class:completion-menu.completion.current")
+    assert sel.bgcolor == "46e08a"          # selected row highlighted in accent green
+    item = MENU_STYLE.get_attrs_for_style_str("class:completion-menu.completion")
+    assert item.color == "46e08a"           # command names in green
+    assert item.bgcolor == "0a0f0a"         # dark menu background, not gray
+
+
+def test_app_wires_menu_style():
+    out = OutputBuffer()
+    with create_pipe_input() as inp:
+        app = build_app(output=out, on_submit=lambda t: None, on_stop=lambda: None,
+                        on_cycle_mode=lambda: None, get_status=lambda: "s",
+                        pt_input=inp, pt_output=DummyOutput())
+        assert app.style is not None
+
+
 def test_app_layout_has_completions_menu_float():
     # without a CompletionsMenu float the "/" dropdown never renders, even though
     # the completer computes matches - this is the piece that was missing.
