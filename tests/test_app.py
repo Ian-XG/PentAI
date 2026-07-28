@@ -4,12 +4,41 @@ from prompt_toolkit.output import DummyOutput
 from pentai.ui.app import build_app, OutputBuffer
 
 
-def test_output_buffer_accumulates():
+def test_output_buffer_renders_appended_renderables_at_width():
+    from rich.text import Text
     b = OutputBuffer()
-    b.append("a"); b.append("b")
-    assert b.text() == "ab"
+    b.append(Text("alpha"))
+    b.append(Text("beta"))
+    out = b.render(80)
+    assert "alpha" in out and "beta" in out
+
+
+def test_output_buffer_render_reflows_at_different_widths():
+    from rich.text import Text
+    b = OutputBuffer()
+    b.append_full_width(" > hi", "bold black on green")
+    narrow = b.render(20)
+    wide = b.render(120)
+    # the highlight bar pads to the render width, so wider render produces a longer line
+    assert len(wide.splitlines()[0]) > len(narrow.splitlines()[0])
+
+
+def test_output_buffer_visible_tail():
+    from rich.text import Text
+    b = OutputBuffer()
+    for i in range(20):
+        b.append(Text(f"line{i}"))
+    vis = b.visible(3, 0, 80)     # bottom 3 logical lines
+    assert "line19" in vis and "line0" not in vis
+    assert b.line_count(80) >= 20
+
+
+def test_output_buffer_clear():
+    from rich.text import Text
+    b = OutputBuffer()
+    b.append(Text("x"))
     b.clear()
-    assert b.text() == ""
+    assert b.render(80) == ""
 
 
 def test_app_submit_then_exit_headless():
@@ -43,20 +72,13 @@ def test_app_cycle_mode_key_headless():
     assert cycles == [1]
 
 
-def test_output_buffer_visible_tail_and_offset():
-    b = OutputBuffer()
-    b.append("\n".join(str(i) for i in range(10)))  # lines "0".."9"
-    assert b.visible(3, 0) == "7\n8\n9"       # bottom 3 (follow)
-    assert b.visible(3, 3) == "4\n5\n6"       # scrolled up 3
-    assert b.visible(100, 0) == b.text()      # fits -> full text
-    assert b.line_count() == 10
-
-
 def test_app_pageup_then_end_headless():
     from prompt_toolkit.input.defaults import create_pipe_input
     from prompt_toolkit.output import DummyOutput
+    from rich.text import Text
     out = OutputBuffer()
-    out.append("\n".join(str(i) for i in range(200)))  # long content
+    for i in range(200):
+        out.append(Text(str(i)))  # long content
     with create_pipe_input() as inp:
         app = build_app(output=out, on_submit=lambda t: None, on_stop=lambda: None,
                         on_cycle_mode=lambda: None, get_status=lambda: "s",

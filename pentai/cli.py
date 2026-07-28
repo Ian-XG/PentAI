@@ -35,7 +35,6 @@ from .ui.startup import render_startup, render_toolcheck
 from .ui.render import markdown_theme
 from .ui.app import build_app, OutputBuffer
 from .ui.runner import TurnController
-from .ui.tui_core import render_to_ansi
 
 _SKILLS_DIR = Path(__file__).parent / "skills"
 _SYSTEM_PROMPT = (Path(__file__).parent / "prompts" / "system.md").read_text()
@@ -331,20 +330,20 @@ def main_tui(argv: list[str]) -> int:
 
     output = OutputBuffer()
     if cfg_error is not None:
-        output.append(render_to_ansi(Text(
+        output.append(Text(
             f"[!] could not load config, using defaults: {cfg_error}", style=palette["alert"]),
-            theme=markdown_theme(palette)))
+            theme=markdown_theme(palette))
     if not provider_ready(cfg):
         pc = cfg.providers[cfg.active]
         env_hint = pc.api_key_env or "the provider's API key env var"
-        output.append(render_to_ansi(Text(
+        output.append(Text(
             f"[!] no API key for '{cfg.active}'. Run /setup, or set {env_hint}.", style=palette["alert"]),
-            theme=markdown_theme(palette)))
-    output.append(_capture_console(lambda c: render_startup(
+            theme=markdown_theme(palette))
+    output.append_renderer(lambda w: _capture_console(lambda c: render_startup(
         c, palette=palette, provider=cfg.active, model=cfg.providers[cfg.active].model,
         playbooks=list_playbooks(_SKILLS_DIR), tools=AGENT_TOOL_NAMES, modes=MODES,
-        scope_count=len(cfg.scope), session_id=session_id)))
-    output.append(_capture_console(lambda c: render_toolcheck(c, palette, _tool_results)))
+        scope_count=len(cfg.scope), session_id=session_id), width=w))
+    output.append_renderer(lambda w: _capture_console(lambda c: render_toolcheck(c, palette, _tool_results), width=w))
 
     mode_ref = {"mode": "auto"}
     cmds_ref = {"n": 0}
@@ -352,9 +351,9 @@ def main_tui(argv: list[str]) -> int:
     def _run_on_loop(fn: Callable[[], None]) -> None:
         app.loop.call_soon_threadsafe(fn)
 
-    def _post(chunk: str) -> None:
+    def _post(renderable, theme=None) -> None:
         def _append() -> None:
-            output.append(chunk)
+            output.append(renderable, theme=theme)
             app.invalidate()
         _run_on_loop(_append)
 
@@ -369,8 +368,8 @@ def main_tui(argv: list[str]) -> int:
             answer["v"] = yes
             event.set()
         def _ask() -> None:
-            output.append(render_to_ansi(Text(f"[confirm] {prompt} [y/N]", style=palette["accent"]),
-                theme=markdown_theme(palette)))
+            output.append(Text(f"[confirm] {prompt} [y/N]", style=palette["accent"]),
+                theme=markdown_theme(palette))
             controller.request_confirm(on_answer)
             app.invalidate()
         _run_on_loop(_ask)
@@ -385,9 +384,9 @@ def main_tui(argv: list[str]) -> int:
             buf: list[str] = []
             def flush() -> None:
                 if buf:
-                    chunk = render_to_ansi(Markdown("".join(buf)), theme=markdown_theme(palette))
+                    md = Markdown("".join(buf))
                     buf.clear()
-                    _post(chunk)
+                    _post(md, theme=markdown_theme(palette))
             try:
                 for ev in agent.send(text):
                     if controller.stopped:
@@ -397,19 +396,18 @@ def main_tui(argv: list[str]) -> int:
                     elif isinstance(ev, ToolInvocation):
                         flush()
                         cmd = ev.arguments.get("command", ev.arguments)
-                        chunk = (render_to_ansi(Text(f"[EXEC] {cmd}", style=palette["accent"]),
-                                    theme=markdown_theme(palette)) +
-                                render_to_ansi(Text(str(ev.result), style=palette["dim"]),
-                                    theme=markdown_theme(palette)))
-                        def _append_exec(chunk: str = chunk) -> None:
+                        cmd_text = Text(f"[EXEC] {cmd}", style=palette["accent"])
+                        result_text = Text(str(ev.result), style=palette["dim"])
+                        def _append_exec(cmd_text: Text = cmd_text, result_text: Text = result_text) -> None:
                             cmds_ref["n"] += 1
-                            output.append(chunk)
+                            output.append(cmd_text, theme=markdown_theme(palette))
+                            output.append(result_text, theme=markdown_theme(palette))
                             app.invalidate()
                         _run_on_loop(_append_exec)
             except Exception as e:
                 flush()
-                _post(render_to_ansi(Text(f"[!] {friendly_error(e)}", style=palette["alert"]),
-                    theme=markdown_theme(palette)))
+                _post(Text(f"[!] {friendly_error(e)}", style=palette["alert"]),
+                    theme=markdown_theme(palette))
             else:
                 flush()
             finally:
@@ -425,11 +423,7 @@ def main_tui(argv: list[str]) -> int:
         text = text.strip()
         if not text:
             return
-        _w = shutil.get_terminal_size((100, 24)).columns
-        _line = f" > {text}".ljust(_w)
-        output.append(render_to_ansi(
-            Text(_line, style=f"bold black on {palette['accent']}"),
-            width=_w, theme=markdown_theme(palette)))
+        output.append_full_width(f" > {text}", f"bold black on {palette['accent']}")
         app.invalidate()
         if controller.awaiting_confirm:
             controller.submit(text)
@@ -442,8 +436,8 @@ def main_tui(argv: list[str]) -> int:
             cmd, args = slash
             if cmd == "mode":
                 mode_ref["mode"] = apply_mode_command(mode_ref["mode"], args)
-                output.append(render_to_ansi(Text(f"[ mode: {mode_ref['mode'].upper()} ]", style=palette["accent"]),
-                    theme=markdown_theme(palette)))
+                output.append(Text(f"[ mode: {mode_ref['mode'].upper()} ]", style=palette["accent"]),
+                    theme=markdown_theme(palette))
                 app.invalidate()
                 return
             result = handle_slash(cmd, args, scope=scope)
@@ -453,9 +447,9 @@ def main_tui(argv: list[str]) -> int:
             if result == "__setup__":
                 # The interactive wizard uses blocking console.input() calls that
                 # would deadlock the full-screen event loop, so it's not run here.
-                output.append(render_to_ansi(Text(
+                output.append(Text(
                     "setup wizard is not available in --tui mode; run 'pentai --classic' then /setup",
-                    style=palette["alert"]), theme=markdown_theme(palette)))
+                    style=palette["alert"]), theme=markdown_theme(palette))
                 app.invalidate()
                 return
             if result == "__clear__":
@@ -465,40 +459,40 @@ def main_tui(argv: list[str]) -> int:
             if result == "__notes__":
                 notes = session_dir / "notes.md"
                 if notes.exists():
-                    output.append(render_to_ansi(Markdown(notes.read_text()), theme=markdown_theme(palette)))
+                    output.append(Markdown(notes.read_text()), theme=markdown_theme(palette))
                 else:
-                    output.append(render_to_ansi(Text("[no notes yet]", style=palette["dim"]),
-                        theme=markdown_theme(palette)))
+                    output.append(Text("[no notes yet]", style=palette["dim"]),
+                        theme=markdown_theme(palette))
                 app.invalidate()
                 return
             if result == "__report__":
                 notes = session_dir / "notes.md"
                 if notes.exists():
-                    output.append(render_to_ansi(Markdown("# PentAI Session Report\n\n" + notes.read_text()),
-                        theme=markdown_theme(palette)))
+                    output.append(Markdown("# PentAI Session Report\n\n" + notes.read_text()),
+                        theme=markdown_theme(palette))
                 else:
-                    output.append(render_to_ansi(Text(
+                    output.append(Text(
                         "[no findings recorded yet - the agent saves them with save_note]",
-                        style=palette["dim"]), theme=markdown_theme(palette)))
+                        style=palette["dim"]), theme=markdown_theme(palette))
                 app.invalidate()
                 return
             if result == "__tools__":
-                output.append(_capture_console(lambda c: render_toolcheck(c, palette, _tool_results)))
-                output.append(render_to_ansi(Text("agent tools: " + ", ".join(AGENT_TOOL_NAMES), style=palette["dim"]),
-                    theme=markdown_theme(palette)))
+                output.append_renderer(lambda w: _capture_console(lambda c: render_toolcheck(c, palette, _tool_results), width=w))
+                output.append(Text("agent tools: " + ", ".join(AGENT_TOOL_NAMES), style=palette["dim"]),
+                    theme=markdown_theme(palette))
                 app.invalidate()
                 return
             if result == "__playbooks__":
                 if args:
-                    output.append(render_to_ansi(Markdown(load_playbook(args[0], skills_dir=_SKILLS_DIR)),
-                        theme=markdown_theme(palette)))
+                    output.append(Markdown(load_playbook(args[0], skills_dir=_SKILLS_DIR)),
+                        theme=markdown_theme(palette))
                 else:
                     names = list_playbooks(_SKILLS_DIR)
-                    output.append(render_to_ansi(Text("playbooks: " + ", ".join(names), style=palette["accent"]),
-                        theme=markdown_theme(palette)))
+                    output.append(Text("playbooks: " + ", ".join(names), style=palette["accent"]),
+                        theme=markdown_theme(palette))
                 app.invalidate()
                 return
-            output.append(render_to_ansi(Text(result, style=palette["accent"]), theme=markdown_theme(palette)))
+            output.append(Text(result, style=palette["accent"]), theme=markdown_theme(palette))
             app.invalidate()
             return
         controller.submit(text)

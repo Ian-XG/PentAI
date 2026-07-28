@@ -8,32 +8,44 @@ from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.layout import Layout, HSplit, Window
 from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.widgets import Frame, TextArea
+from rich.text import Text
+
+from pentai.ui.tui_core import render_to_ansi
 
 
 class OutputBuffer:
     def __init__(self) -> None:
-        self._text = ""
+        self._renderers: list = []
 
-    def append(self, ansi: str) -> None:
-        self._text += ansi
+    def append_renderer(self, fn) -> None:
+        # fn: Callable[[int], str] rendering ANSI at the given width
+        self._renderers.append(fn)
 
-    def text(self) -> str:
-        return self._text
+    def append(self, renderable, theme=None) -> None:
+        self._renderers.append(lambda w, r=renderable, t=theme: render_to_ansi(r, width=w, theme=t))
+
+    def append_full_width(self, text: str, style: str) -> None:
+        # a highlight bar padded to the CURRENT width at render time (so it reflows on resize)
+        self._renderers.append(lambda w, s=text, st=style: render_to_ansi(Text(s.ljust(w), style=st), width=w))
+
+    def render(self, width: int) -> str:
+        return "".join(fn(width) for fn in self._renderers)
 
     def clear(self) -> None:
-        self._text = ""
+        self._renderers.clear()
 
-    def visible(self, rows: int, offset: int = 0) -> str:
-        lines = self._text.split("\n")
+    def line_count(self, width: int) -> int:
+        return self.render(width).count("\n") + 1
+
+    def visible(self, rows: int, offset: int, width: int) -> str:
+        text = self.render(width)
+        lines = text.split("\n")
         if rows <= 0 or len(lines) <= rows:
-            return self._text
+            return text
         end = len(lines) - offset
         end = max(rows, min(end, len(lines)))   # clamp so a full window is always shown
         start = max(0, end - rows)
         return "\n".join(lines[start:end])
-
-    def line_count(self) -> int:
-        return self._text.count("\n") + 1
 
 
 def build_app(*, output: OutputBuffer,
@@ -58,8 +70,11 @@ def build_app(*, output: OutputBuffer,
         # rows available for the output region: total minus input frame (3) and status (1) and a margin
         return max(1, shutil.get_terminal_size((100, 24)).lines - 5)
 
+    def _output_width() -> int:
+        return max(20, shutil.get_terminal_size((100, 24)).columns)
+
     output_control = FormattedTextControl(
-        lambda: ANSI(output.visible(_output_rows(), scroll["offset"])), focusable=False
+        lambda: ANSI(output.visible(_output_rows(), scroll["offset"], _output_width())), focusable=False
     )
     output_window = Window(content=output_control, wrap_lines=True)
     status_window = Window(
@@ -88,7 +103,7 @@ def build_app(*, output: OutputBuffer,
     @kb.add("pageup")
     def _(event) -> None:
         rows = _output_rows()
-        max_offset = max(0, output.line_count() - rows)
+        max_offset = max(0, output.line_count(_output_width()) - rows)
         scroll["offset"] = min(scroll["offset"] + rows, max_offset)
         event.app.invalidate()
 
