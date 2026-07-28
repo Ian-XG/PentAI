@@ -148,6 +148,21 @@ def test_slash_completer_wired_into_input_area():
         assert isinstance(wrapped, SlashCompleter)
 
 
+def test_app_layout_has_completions_menu_float():
+    # without a CompletionsMenu float the "/" dropdown never renders, even though
+    # the completer computes matches - this is the piece that was missing.
+    from prompt_toolkit.layout.containers import FloatContainer
+    from prompt_toolkit.layout.menus import CompletionsMenu
+    out = OutputBuffer()
+    with create_pipe_input() as inp:
+        app = build_app(output=out, on_submit=lambda t: None, on_stop=lambda: None,
+                        on_cycle_mode=lambda: None, get_status=lambda: "s",
+                        pt_input=inp, pt_output=DummyOutput())
+        root = app.layout.container
+        assert isinstance(root, FloatContainer)
+        assert any(isinstance(f.content, CompletionsMenu) for f in root.floats)
+
+
 def test_app_mouse_support_pageup_then_end_headless():
     # mouse_support is on by default now; verify the app still builds and runs
     # cleanly through the same scroll/jump-to-bottom key sequence with it enabled.

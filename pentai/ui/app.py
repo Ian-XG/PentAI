@@ -8,8 +8,9 @@ from prompt_toolkit.formatted_text import ANSI
 from prompt_toolkit.filters import Condition
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.layout import ConditionalContainer, Layout, HSplit, Window
-from prompt_toolkit.layout.containers import WindowAlign
+from prompt_toolkit.layout.containers import WindowAlign, FloatContainer, Float
 from prompt_toolkit.layout.controls import FormattedTextControl
+from prompt_toolkit.layout.menus import CompletionsMenu
 from prompt_toolkit.mouse_events import MouseEventType
 from prompt_toolkit.widgets import Frame, TextArea
 from rich.text import Text
@@ -155,7 +156,15 @@ def build_app(*, output: OutputBuffer,
         filter=Condition(lambda: get_thinking() is not None),
     )
 
-    root = HSplit([output_window, jump_bar, thinking_bar, input_frame, status_window])
+    # FloatContainer + CompletionsMenu is what actually renders the "/" dropdown;
+    # a custom full-screen Application has no completions menu unless we add one.
+    root = FloatContainer(
+        content=HSplit([output_window, jump_bar, thinking_bar, input_frame, status_window]),
+        floats=[
+            Float(xcursor=True, ycursor=True,
+                  content=CompletionsMenu(max_height=10, scroll_offset=1)),
+        ],
+    )
 
     kb = KeyBindings()
 
