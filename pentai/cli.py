@@ -179,7 +179,7 @@ def main_classic(argv: list[str] | None = None) -> int:
             f"[{palette['accent']}]{escape(prompt)} [y/N] [/]"
         ).strip().lower() in ("y", "yes")
 
-    mode_ref = {"mode": "ask"}
+    mode_ref = {"mode": "auto"}
     mode_getter = lambda: mode_ref["mode"]
 
     kb = KeyBindings()
@@ -346,7 +346,7 @@ def main_tui(argv: list[str]) -> int:
         scope_count=len(cfg.scope), session_id=session_id)))
     output.append(_capture_console(lambda c: render_toolcheck(c, palette, _tool_results)))
 
-    mode_ref = {"mode": "ask"}
+    mode_ref = {"mode": "auto"}
     cmds_ref = {"n": 0}
 
     def _run_on_loop(fn: Callable[[], None]) -> None:

@@ -5,6 +5,18 @@ from fnmatch import fnmatch
 _IP_RE = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
 _HOST_RE = re.compile(r"\b(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}\b")
 
+def _normalize_entry(entry: str) -> str:
+    entry = entry.strip()
+    for pre in ("http://", "https://"):
+        if entry.startswith(pre):
+            entry = entry[len(pre):]
+            break
+    if "/" in entry:
+        host, _, rest = entry.partition("/")
+        if not rest.isdigit():  # a URL path, not a CIDR mask - drop it
+            entry = host
+    return entry
+
 def extract_targets(command: str) -> list[str]:
     found: list[str] = []
     for m in _IP_RE.findall(command):
@@ -20,7 +32,8 @@ class Scope:
         self.entries = list(entries)
 
     def add(self, entry: str) -> None:
-        if entry not in self.entries:
+        entry = _normalize_entry(entry)
+        if entry and entry not in self.entries:
             self.entries.append(entry)
 
     def contains(self, target: str) -> bool:

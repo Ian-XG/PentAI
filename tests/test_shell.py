@@ -24,16 +24,21 @@ def test_out_of_scope_requires_confirm():
     assert any("scope" in p.lower() for p in seen)
     assert "cancelled" in r.lower()
 
-def test_out_of_scope_confirmed_then_execute_declined():
+def test_ask_out_of_scope_single_confirm_declined():
     calls = []
-    def runner(cmd):
-        calls.append(cmd)
-        return CommandResult("x", "", 0)
-    answers = iter([True, False])
     r = run_command("nmap 1.2.3.4", scope=Scope(["10.0.0.0/24"]),
-                    confirm=lambda prompt: next(answers), runner=runner)
+                    confirm=lambda p: calls.append(p) or False, mode="ask",
+                    runner=lambda c: CommandResult("x", "", 0))
+    assert len(calls) == 1                      # exactly ONE prompt, not two
+    assert "out of scope" in calls[0].lower()
     assert "cancelled" in r.lower()
-    assert calls == []
+
+def test_ask_in_scope_single_confirm_runs():
+    calls = []
+    r = run_command("nmap 10.0.0.5", scope=Scope(["10.0.0.0/24"]),
+                    confirm=lambda p: calls.append(p) or True, mode="ask",
+                    runner=lambda c: CommandResult("ok", "", 0))
+    assert len(calls) == 1 and "ok" in r
 
 def test_tool_schema_name():
     assert RUN_COMMAND_TOOL.name == "run_command"

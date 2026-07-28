@@ -19,12 +19,16 @@ def run_command(command: str, *, scope: Scope, confirm: Callable[[str], bool],
                 mode: str = "ask", runner: Callable[[str], CommandResult] | None = None) -> str:
     runner = runner or _subprocess_runner
     oos = scope.out_of_scope(command)
-    if oos and should_prompt_oos(mode):
-        if not confirm(f"OUT OF SCOPE: {', '.join(oos)}. You confirm you are authorized?"):
-            return "[cancelled: target out of authorized scope]"
-    if should_prompt_exec(mode):
-        if not confirm(f"execute: {command}"):
+    if should_prompt_exec(mode):            # ASK: exactly one prompt, note OOS inline
+        if oos:
+            label = f"OUT OF SCOPE ({', '.join(oos)}) - run anyway? {command}"
+        else:
+            label = f"run? {command}"
+        if not confirm(label):
             return "[cancelled by user]"
+    elif oos and should_prompt_oos(mode):   # AUTO: only out-of-scope needs a prompt
+        if not confirm(f"OUT OF SCOPE ({', '.join(oos)}) - authorized? {command}"):
+            return "[cancelled: target out of authorized scope]"
     result = runner(command)
     return f"exit_code={result.exit_code}\n--- stdout ---\n{result.stdout}\n--- stderr ---\n{result.stderr}"
 
