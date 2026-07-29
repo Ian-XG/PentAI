@@ -38,7 +38,7 @@ from .ui.settings import render_provider_menu
 from .ui.select import select
 from .ui.render import markdown_theme
 from .ui.mdtable import md
-from .ui.toolfmt import format_command_output
+from .ui.toolfmt import format_command_output, looks_like_tool_schema_dump
 from .ui.app import build_app, OutputBuffer
 from .ui.runner import TurnController
 
@@ -520,9 +520,16 @@ def main_tui(argv: list[str]) -> int:
             buf: list[str] = []
             def flush() -> None:
                 if buf:
-                    rendered = md("".join(buf))
+                    text_out = "".join(buf)
                     buf.clear()
-                    _post(rendered, theme=markdown_theme(palette))
+                    if looks_like_tool_schema_dump(text_out):
+                        _post(Text(
+                            "[!] the model echoed the tool schema instead of answering - it is "
+                            "probably too small for reliable tool-calling. Switch to a larger model "
+                            "with /settings (e.g. gpt-oss:20b, or Claude / GPT-4o).",
+                            style=palette["alert"]), theme=markdown_theme(palette))
+                    else:
+                        _post(md(text_out), theme=markdown_theme(palette))
             try:
                 for ev in agent.send(text):
                     if controller.stopped:
