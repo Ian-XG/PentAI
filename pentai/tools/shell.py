@@ -11,6 +11,27 @@ class CommandResult:
     stderr: str
     exit_code: int
 
+def truncate_output(text: str, *, max_lines: int = 200, head_lines: int = 140,
+                    tail_lines: int = 40, max_chars: int = 16000) -> str:
+    """Cap huge command output so it neither floods the TUI nor blows the model's
+    context (this string is fed back to the model as the tool result on every
+    later turn too). Within limits: returned unchanged. Over the line limit:
+    keep the first `head_lines` and last `tail_lines`, replace the middle with
+    a one-line marker. A hard `max_chars` backstop also applies afterward, in
+    case a single line (or the whole thing) is enormous on its own."""
+    if not text:
+        return text
+    lines = text.split("\n")
+    if len(lines) > max_lines:
+        hidden = len(lines) - head_lines - tail_lines
+        marker = f"... [{hidden} lines truncated] ..."
+        text = "\n".join(lines[:head_lines] + [marker] + lines[-tail_lines:])
+    if len(text) > max_chars:
+        half = max_chars // 2
+        omitted = len(text) - max_chars
+        text = f"{text[:half]}\n... [{omitted} chars truncated] ...\n{text[-half:]}"
+    return text
+
 def _subprocess_runner(command: str) -> CommandResult:
     proc = subprocess.run(command, shell=True, capture_output=True, text=True)
     return CommandResult(proc.stdout, proc.stderr, proc.returncode)
@@ -30,7 +51,9 @@ def run_command(command: str, *, scope: Scope, confirm: Callable[[str], bool],
         if not confirm(f"OUT OF SCOPE ({', '.join(oos)}) - authorized? {command}"):
             return "[cancelled: target out of authorized scope]"
     result = runner(command)
-    return f"exit_code={result.exit_code}\n--- stdout ---\n{result.stdout}\n--- stderr ---\n{result.stderr}"
+    stdout = truncate_output(result.stdout)
+    stderr = truncate_output(result.stderr)
+    return f"exit_code={result.exit_code}\n--- stdout ---\n{stdout}\n--- stderr ---\n{stderr}"
 
 RUN_COMMAND_TOOL = Tool(
     name="run_command",
