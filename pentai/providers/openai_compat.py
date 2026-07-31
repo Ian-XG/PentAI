@@ -59,11 +59,27 @@ class OpenAICompatProvider:
 
     def chat(self, messages: list[Message], tools: list[Tool],
              system: str = "") -> Iterator[Event]:
+        payload = build_payload(messages, tools, self.model, system)
+        emitted = False
+        try:
+            for ev in self._stream(payload):
+                emitted = True
+                yield ev
+        except httpx.HTTPStatusError as e:
+            # Many local models (e.g. llama2-uncensored via Ollama) don't support
+            # the OpenAI `tools` param and reject it with 400. If nothing streamed
+            # yet, retry as a plain chat so any local model still works.
+            if e.response.status_code == 400 and payload.get("tools") and not emitted:
+                payload.pop("tools", None)
+                yield from self._stream(payload)
+            else:
+                raise
+
+    def _stream(self, payload: dict) -> Iterator[Event]:
         url = f"{self.base_url}/chat/completions"
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
-        payload = build_payload(messages, tools, self.model, system)
         tool_buffer: dict[int, dict] = {}
         for line in self._poster(url, headers, payload):
             if not line or not line.startswith("data:"):

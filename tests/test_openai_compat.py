@@ -1,3 +1,4 @@
+import httpx
 from pentai.providers.base import Message, Tool, TextDelta, ToolCallEvent, Done
 from pentai.providers.openai_compat import build_payload, parse_sse_chunk, OpenAICompatProvider
 
@@ -53,3 +54,37 @@ def test_chat_assembles_multichunk_tool_call():
     assert tcs[0].name == "run_command"
     assert tcs[0].arguments == {"command": "ls"}
     assert any(isinstance(e, Done) and e.stop_reason == "tool_use" for e in events)
+
+def test_chat_retries_without_tools_on_400():
+    # a local model that rejects the `tools` param (Ollama returns 400); we should
+    # transparently retry as a plain chat so the model still works.
+    chat_lines = [
+        'data: {"choices":[{"delta":{"content":"hi there"}}]}',
+        'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}',
+        'data: [DONE]',
+    ]
+    calls = []
+    def poster(url, headers, json):
+        calls.append("tools" in json)
+        if "tools" in json:
+            resp = httpx.Response(400, request=httpx.Request("POST", url))
+            raise httpx.HTTPStatusError("bad request", request=resp.request, response=resp)
+        return iter(chat_lines)
+
+    prov = OpenAICompatProvider("http://localhost:11434/v1", None,
+                                "llama2-uncensored", poster=poster)
+    tools = [Tool("run_command", "run", {"type": "object"})]
+    events = list(prov.chat([Message("user", "hi")], tools))
+    assert calls == [True, False]
+    assert any(isinstance(e, TextDelta) and e.text == "hi there" for e in events)
+
+def test_chat_does_not_retry_400_without_tools():
+    def poster(url, headers, json):
+        resp = httpx.Response(400, request=httpx.Request("POST", url))
+        raise httpx.HTTPStatusError("bad request", request=resp.request, response=resp)
+    prov = OpenAICompatProvider("http://x/v1", None, "m", poster=poster)
+    try:
+        list(prov.chat([Message("user", "hi")], []))
+        assert False, "expected HTTPStatusError to propagate"
+    except httpx.HTTPStatusError:
+        pass
