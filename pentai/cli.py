@@ -23,7 +23,7 @@ from .onboarding import (needs_onboarding, run_wizard, save_config, merge_provid
 from .scope import Scope
 from .providers.factory import build_provider
 from .agent import Agent, ToolSpec, ToolInvocation
-from .providers.base import TextDelta
+from .providers.base import TextDelta, Notice
 from .tools.shell import run_command, RUN_COMMAND_TOOL
 from .tools.notes import save_note, SAVE_NOTE_TOOL
 from .tools.playbooks import load_playbook, LOAD_PLAYBOOK_TOOL, list_playbooks
@@ -56,7 +56,7 @@ def _play_sigil_glitch(console, palette) -> None:
     except Exception:
         pass  # cosmetic only - never let a boot animation crash the app
 
-def stream_turn(events, render_text, render_tool, render_error) -> None:
+def stream_turn(events, render_text, render_tool, render_error, render_notice=None) -> None:
     """Consume agent events, buffering text and flushing it as one block before
     each tool invocation, at the end, AND on error (so partial output is never lost)."""
     buf: list[str] = []
@@ -68,6 +68,10 @@ def stream_turn(events, render_text, render_tool, render_error) -> None:
         for ev in events:
             if isinstance(ev, TextDelta):
                 buf.append(ev.text)
+            elif isinstance(ev, Notice):
+                flush()
+                if render_notice:
+                    render_notice(ev.text)
             elif isinstance(ev, ToolInvocation):
                 flush()
                 render_tool(ev)
@@ -302,8 +306,12 @@ def main_classic(argv: list[str] | None = None) -> int:
             stop()
             console.print(f"\n[!] {friendly_error(e)}", style=palette["alert"])
 
+        def render_notice(text):
+            stop()
+            console.print(f"[!] {text}", style=palette["alert"])
+
         try:
-            stream_turn(agent.send(line), render_text, render_tool, render_error)
+            stream_turn(agent.send(line), render_text, render_tool, render_error, render_notice)
         except KeyboardInterrupt:
             stop()
             console.print("\n[!] interrupted", style=palette["alert"])
@@ -537,6 +545,10 @@ def main_tui(argv: list[str]) -> int:
                     if isinstance(ev, TextDelta):
                         buf.append(ev.text)
                         thinking["chars"] += len(ev.text)
+                    elif isinstance(ev, Notice):
+                        flush()
+                        _post(Text(f"[!] {ev.text}", style=palette["alert"]),
+                              theme=markdown_theme(palette))
                     elif isinstance(ev, ToolInvocation):
                         flush()
                         render_tool(ev)

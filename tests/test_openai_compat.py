@@ -1,5 +1,5 @@
 import httpx
-from pentai.providers.base import Message, Tool, TextDelta, ToolCallEvent, Done
+from pentai.providers.base import Message, Tool, TextDelta, ToolCallEvent, Done, Notice
 from pentai.providers.openai_compat import build_payload, parse_sse_chunk, OpenAICompatProvider
 
 def test_build_payload_includes_stream_and_tools():
@@ -77,6 +77,27 @@ def test_chat_retries_without_tools_on_400():
     events = list(prov.chat([Message("user", "hi")], tools))
     assert calls == [True, False]
     assert any(isinstance(e, TextDelta) and e.text == "hi there" for e in events)
+    # user is told once, on the turn tools got dropped
+    assert sum(isinstance(e, Notice) for e in events) == 1
+
+def test_chat_stops_sending_tools_after_first_400():
+    # after learning tools are unsupported, later turns skip them entirely (no
+    # wasted 400 round-trip) and emit no further Notice.
+    chat_lines = ['data: {"choices":[{"delta":{"content":"ok"}}]}',
+                  'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}', 'data: [DONE]']
+    calls = []
+    def poster(url, headers, json):
+        calls.append("tools" in json)
+        if "tools" in json:
+            resp = httpx.Response(400, request=httpx.Request("POST", url))
+            raise httpx.HTTPStatusError("bad request", request=resp.request, response=resp)
+        return iter(chat_lines)
+    prov = OpenAICompatProvider("http://x/v1", None, "m", poster=poster)
+    tools = [Tool("run_command", "run", {"type": "object"})]
+    list(prov.chat([Message("user", "hi")], tools))       # turn 1: 400 then retry
+    second = list(prov.chat([Message("user", "again")], tools))  # turn 2: no tools sent
+    assert calls == [True, False, False]
+    assert not any(isinstance(e, Notice) for e in second)
 
 def test_chat_does_not_retry_400_without_tools():
     def poster(url, headers, json):

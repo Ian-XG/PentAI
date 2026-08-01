@@ -1,7 +1,12 @@
 import json as _json
 from typing import Callable, Iterator
 import httpx
-from .base import Message, Tool, TextDelta, ToolCallEvent, Done, Event
+from .base import Message, Tool, TextDelta, ToolCallEvent, Done, Notice, Event
+
+_NO_TOOLS_NOTICE = (
+    "this model doesn't support tool-calling, so PentAI can't run commands with "
+    "it - it will chat only. Switch to a tool-capable model with /setup or "
+    "`pentai --settings` (e.g. gpt-oss:20b, Claude, or GPT-4o) for the full agent.")
 
 def _message_to_dict(m: Message) -> dict:
     if m.role == "tool":
@@ -56,10 +61,15 @@ class OpenAICompatProvider:
         self.api_key = api_key
         self.model = model
         self._poster = poster or _httpx_poster
+        self._tools_unsupported = False
 
     def chat(self, messages: list[Message], tools: list[Tool],
              system: str = "") -> Iterator[Event]:
         payload = build_payload(messages, tools, self.model, system)
+        # Once we've learned this model rejects tools, don't send them again
+        # (avoids a wasted 400 round-trip every turn).
+        if self._tools_unsupported:
+            payload.pop("tools", None)
         emitted = False
         try:
             for ev in self._stream(payload):
@@ -70,6 +80,8 @@ class OpenAICompatProvider:
             # the OpenAI `tools` param and reject it with 400. If nothing streamed
             # yet, retry as a plain chat so any local model still works.
             if e.response.status_code == 400 and payload.get("tools") and not emitted:
+                self._tools_unsupported = True
+                yield Notice(_NO_TOOLS_NOTICE)
                 payload.pop("tools", None)
                 yield from self._stream(payload)
             else:

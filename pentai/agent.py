@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Callable, Iterator
 from .providers.base import (Provider, Message, Tool, ToolCall,
-                             TextDelta, ToolCallEvent, Done)
+                             TextDelta, ToolCallEvent, Done, Notice)
 
 @dataclass
 class ToolSpec:
@@ -14,7 +14,7 @@ class ToolInvocation:
     arguments: dict
     result: str
 
-AgentEvent = TextDelta | ToolInvocation
+AgentEvent = TextDelta | ToolInvocation | Notice
 
 class Agent:
     def __init__(self, provider: Provider, system_prompt: str,
@@ -43,6 +43,8 @@ class Agent:
                     yield ev
                 elif isinstance(ev, ToolCallEvent):
                     pending.append(ToolCall(ev.id, ev.name, ev.arguments))
+                elif isinstance(ev, Notice):
+                    yield ev
                 elif isinstance(ev, Done):
                     pass
             assistant_text = "".join(text_parts)
