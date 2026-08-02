@@ -1,8 +1,41 @@
 from pathlib import Path
 from pentai.config import Config, ProviderConfig
 from pentai.scope import Scope
-from pentai.cli import build_agent
+from pentai.cli import build_agent, model_command
 from pentai.agent import Agent
+from pentai.providers.openai_compat import OpenAICompatProvider
+from pentai.providers.anthropic import AnthropicProvider
+
+def test_model_command_switches_and_persists():
+    prov = OpenAICompatProvider("http://localhost:11434/v1", None, "old")
+    prov._tools_unsupported = True
+    saved = {}
+    out = model_command(prov, ["gpt-oss:20b"], persist=lambda m: saved.setdefault("m", m))
+    assert prov.model == "gpt-oss:20b"
+    assert prov._tools_unsupported is False       # set_model reset the latch
+    assert saved["m"] == "gpt-oss:20b"            # persisted
+    assert "gpt-oss:20b" in out
+
+def test_model_command_lists_for_openai_compat():
+    prov = OpenAICompatProvider("http://localhost:11434/v1", None, "llama2")
+    out = model_command(prov, [], list_models_fn=lambda base, key: ["llama2", "gpt-oss:20b"])
+    assert "llama2" in out and "gpt-oss:20b" in out
+    assert "current model: llama2" in out
+
+def test_model_command_handles_list_failure_gracefully():
+    prov = OpenAICompatProvider("http://x/v1", None, "m")
+    def boom(base, key):
+        raise RuntimeError("connection refused")
+    out = model_command(prov, [], list_models_fn=boom)
+    assert "current model: m" in out and "couldn't list" in out
+
+def test_model_command_anthropic_has_no_list():
+    prov = AnthropicProvider("k", "claude-opus-4")
+    out = model_command(prov, [], persist=lambda m: None)
+    assert "current model: claude-opus-4" in out
+    # switching still works on a provider without set_model
+    out2 = model_command(prov, ["claude-sonnet-4"], persist=lambda m: None)
+    assert prov.model == "claude-sonnet-4" and "claude-sonnet-4" in out2
 
 def test_build_agent_wires_three_tools(tmp_path: Path):
     cfg = Config(active="a", providers={"a": ProviderConfig("anthropic", "claude-opus-4", "k")})

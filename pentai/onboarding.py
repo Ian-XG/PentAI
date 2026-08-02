@@ -110,6 +110,17 @@ def save_config(cfg: dict, path: Path = DEFAULT_CONFIG_PATH) -> Path:
     path.chmod(0o600)  # ensure mode even if the file pre-existed
     return path
 
+def set_active_model(model: str, path: Path = DEFAULT_CONFIG_PATH) -> Path | None:
+    """Persist a new model for the active provider. No-op if there's no config
+    file yet (a live session always has one)."""
+    data = read_config_file(path)
+    if not data:
+        return None
+    active = data.get("active")
+    providers = data.setdefault("providers", {})
+    providers.setdefault(active, {})["model"] = model
+    return save_config(data, path)
+
 def needs_onboarding(path: Path = DEFAULT_CONFIG_PATH, env: dict | None = None) -> bool:
     env = os.environ if env is None else env
     if path.exists():

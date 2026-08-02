@@ -54,6 +54,22 @@ def _httpx_poster(url: str, headers: dict, json: dict) -> Iterator[str]:
         for line in resp.iter_lines():
             yield line
 
+def _httpx_getter(url: str, headers: dict) -> dict:
+    resp = httpx.get(url, headers=headers, timeout=10)
+    resp.raise_for_status()
+    return resp.json()
+
+def list_models(base_url: str, api_key: str | None = None,
+                getter: Callable | None = None) -> list[str]:
+    """Model ids from an OpenAI-compatible /models endpoint (Ollama serves the
+    locally-installed models here). getter is injectable for tests."""
+    url = base_url.rstrip("/") + "/models"
+    headers = {}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    data = (getter or _httpx_getter)(url, headers)
+    return [m["id"] for m in (data.get("data") or []) if m.get("id")]
+
 class OpenAICompatProvider:
     def __init__(self, base_url: str, api_key: str | None, model: str,
                  poster: Callable | None = None):
@@ -61,6 +77,11 @@ class OpenAICompatProvider:
         self.api_key = api_key
         self.model = model
         self._poster = poster or _httpx_poster
+        self._tools_unsupported = False
+
+    def set_model(self, model: str) -> None:
+        # reset the tools-unsupported latch: the new model may well support them.
+        self.model = model
         self._tools_unsupported = False
 
     def chat(self, messages: list[Message], tools: list[Tool],

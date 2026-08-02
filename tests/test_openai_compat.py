@@ -1,6 +1,27 @@
 import httpx
 from pentai.providers.base import Message, Tool, TextDelta, ToolCallEvent, Done, Notice
-from pentai.providers.openai_compat import build_payload, parse_sse_chunk, OpenAICompatProvider
+from pentai.providers.openai_compat import (build_payload, parse_sse_chunk,
+                                            OpenAICompatProvider, list_models)
+
+def test_list_models_parses_openai_shape():
+    captured = {}
+    def getter(url, headers):
+        captured["url"] = url
+        return {"object": "list", "data": [{"id": "llama2:latest"}, {"id": "gpt-oss:20b"}, {}]}
+    models = list_models("http://localhost:11434/v1", None, getter=getter)
+    assert models == ["llama2:latest", "gpt-oss:20b"]  # entry without id is skipped
+    assert captured["url"] == "http://localhost:11434/v1/models"
+
+def test_list_models_sends_bearer_when_key():
+    seen = {}
+    list_models("http://x/v1", "secret", getter=lambda u, h: (seen.update(h) or {"data": []}))
+    assert seen["Authorization"] == "Bearer secret"
+
+def test_set_model_resets_tools_latch():
+    prov = OpenAICompatProvider("http://x/v1", None, "old")
+    prov._tools_unsupported = True
+    prov.set_model("new")
+    assert prov.model == "new" and prov._tools_unsupported is False
 
 def test_build_payload_includes_stream_and_tools():
     tools = [Tool("run_command", "run", {"type": "object"})]

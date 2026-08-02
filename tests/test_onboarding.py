@@ -1,7 +1,20 @@
 from pathlib import Path
 import yaml
 from pentai.onboarding import (ProviderChoice, PROVIDER_CHOICES, build_config,
-                               run_wizard, save_config, needs_onboarding)
+                               run_wizard, save_config, needs_onboarding,
+                               set_active_model)
+
+def test_set_active_model_updates_active_provider(tmp_path: Path):
+    p = tmp_path / "config.yaml"
+    save_config({"active": "ollama",
+                 "providers": {"ollama": {"kind": "openai_compat", "model": "old",
+                                          "base_url": "http://localhost:11434/v1"}}}, p)
+    set_active_model("gpt-oss:20b", path=p)
+    data = yaml.safe_load(p.read_text())
+    assert data["providers"]["ollama"]["model"] == "gpt-oss:20b"
+
+def test_set_active_model_noop_without_config(tmp_path: Path):
+    assert set_active_model("x", path=tmp_path / "missing.yaml") is None
 
 def test_five_choices_in_order():
     names = [c.name for c in PROVIDER_CHOICES]

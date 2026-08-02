@@ -18,10 +18,11 @@ from rich.live import Live
 from rich.text import Text
 from .config import Config, load_config, load_config_file, default_config
 from .onboarding import (needs_onboarding, run_wizard, save_config, merge_provider,
-                         read_config_file, PROVIDER_CHOICES, ProviderChoice,
-                         prompt_provider_details)
+                         read_config_file, set_active_model, PROVIDER_CHOICES,
+                         ProviderChoice, prompt_provider_details)
 from .scope import Scope
 from .providers.factory import build_provider
+from .providers.openai_compat import list_models
 from .agent import Agent, ToolSpec, ToolInvocation
 from .providers.base import TextDelta, Notice
 from .tools.shell import run_command, RUN_COMMAND_TOOL
@@ -119,6 +120,28 @@ def build_agent(cfg: Config, scope: Scope, confirm: Callable[[str], bool],
             lambda args: load_playbook(args.get("name", ""), skills_dir=_SKILLS_DIR)),
     }
     return Agent(provider, _SYSTEM_PROMPT, tools, context_provider=context_provider)
+
+def model_command(provider, args: list[str], *, list_models_fn=list_models,
+                  persist=set_active_model) -> str:
+    """Switch the active provider's model in place (/model <name>), or list what's
+    available (/model). The switch is live for this session and persisted to config."""
+    if args:
+        name = args[0]
+        if hasattr(provider, "set_model"):
+            provider.set_model(name)
+        else:
+            provider.model = name
+        persist(name)
+        return f"[ model: {name} ]"
+    base = getattr(provider, "base_url", None)
+    if not base:
+        return f"current model: {provider.model}\nswitch with /model <name>"
+    try:
+        models = list_models_fn(base, getattr(provider, "api_key", None))
+    except Exception as e:
+        return f"current model: {provider.model}\n(couldn't list models: {e})"
+    listing = ", ".join(models) if models else "(none found)"
+    return f"current model: {provider.model}\navailable: {listing}\nswitch with /model <name>"
 
 def apply_mode_command(current: str, args: list[str]) -> str:
     if not args:
@@ -248,6 +271,10 @@ def main_classic(argv: list[str] | None = None) -> int:
                 agent = build_agent(cfg, scope, confirm, session_dir, mode_getter,
                                     context_provider=lambda: session_context(scope.entries, mode_ref["mode"], os.getcwd(), installed_tools))
                 console.print("[ OK ] saved ~/.pentai/config.yaml", style=palette["accent"])
+                continue
+            if result == "__model__":
+                console.print(model_command(agent.provider, slash[1]),
+                              style=palette["accent"], markup=False)
                 continue
             if result == "__clear__":
                 console.clear()
@@ -599,6 +626,11 @@ def main_tui(argv: list[str]) -> int:
                 output.append(Text(
                     "to change your AI provider, quit (/quit) and run:  pentai --settings",
                     style=palette["accent"]), theme=markdown_theme(palette))
+                app.invalidate()
+                return
+            if result == "__model__":
+                output.append(Text(model_command(agent.provider, args), style=palette["accent"]),
+                    theme=markdown_theme(palette))
                 app.invalidate()
                 return
             if result == "__clear__":

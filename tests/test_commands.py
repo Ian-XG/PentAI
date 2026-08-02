@@ -65,6 +65,13 @@ def test_settings_in_menu_and_help():
     assert "/settings" in names
     assert "/settings" in handle_slash("help", [], scope=Scope([]))
 
+def test_model_sentinel_and_help():
+    from pentai.scope import Scope
+    from pentai.commands import handle_slash, SLASH_COMMANDS
+    assert handle_slash("model", ["gpt-oss:20b"], scope=Scope([])) == "__model__"
+    assert "/model" in handle_slash("help", [], scope=Scope([]))
+    assert "/model" in [c for c, _ in SLASH_COMMANDS]
+
 def test_slash_commands_metadata():
     from pentai.commands import SLASH_COMMANDS
     names = [c for c, _ in SLASH_COMMANDS]
