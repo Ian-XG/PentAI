@@ -1,8 +1,8 @@
 from .scope import Scope
 
 _HELP = ("commands: /scope add <target>, /scope list, /settings, /setup, /model [name], "
-         "/mode [ask|auto|bypass], /sessions, /resume [id], /clear, /notes, /findings, "
-         "/report, /tools, /playbooks [name], /help, /quit")
+         "/mode [ask|auto|bypass], /sessions, /resume [id], /clear, /notes, /hosts, "
+         "/findings, /report, /tools, /playbooks [name], /help, /quit")
 
 SLASH_COMMANDS = [
     ("/scope", "add or list authorized targets"),
@@ -13,6 +13,7 @@ SLASH_COMMANDS = [
     ("/resume", "resume a past engagement: /resume <id> (or /resume for the latest)"),
     ("/clear", "clear the screen"),
     ("/notes", "show session notes"),
+    ("/hosts", "show the mapped attack surface (hosts, ports, services)"),
     ("/findings", "list structured findings recorded this engagement"),
     ("/report", "render the engagement report and save it to the session"),
     ("/tools", "list agent tools and installed CLI tools"),
@@ -41,7 +42,7 @@ def handle_slash(command: str, args: list[str], *, scope: Scope) -> str:
     if command in ("setup", "settings"):
         return "__setup__"
     if command in ("clear", "notes", "report", "tools", "playbooks", "model",
-                   "sessions", "resume", "findings"):
+                   "sessions", "resume", "findings", "hosts"):
         return "__" + command + "__"
     if command == "help":
         return _HELP

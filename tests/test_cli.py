@@ -41,7 +41,8 @@ def test_build_agent_wires_all_tools(tmp_path: Path):
     cfg = Config(active="a", providers={"a": ProviderConfig("anthropic", "claude-opus-4", "k")})
     agent = build_agent(cfg, Scope([]), confirm=lambda p: True, session_dir=tmp_path)
     assert isinstance(agent, Agent)
-    assert set(agent.tools) == {"run_command", "save_note", "record_finding", "load_playbook"}
+    assert set(agent.tools) == {"run_command", "record_service", "save_note",
+                                "record_finding", "load_playbook"}
 
 def test_provider_ready_true_with_key():
     from pentai.config import Config, ProviderConfig
@@ -380,8 +381,35 @@ def test_build_agent_wires_record_finding_tool(tmp_path):
     from pentai.cli import build_agent, AGENT_TOOL_NAMES
     cfg = Config(active="a", providers={"a": ProviderConfig("anthropic", "m", "k")})
     agent = build_agent(cfg, Scope([]), confirm=lambda p: True, session_dir=tmp_path)
-    assert "record_finding" in agent.tools
+    assert "record_finding" in agent.tools and "record_service" in agent.tools
     assert set(agent.tools) == set(AGENT_TOOL_NAMES)
+
+def test_session_context_includes_attack_surface():
+    from pentai.cli import session_context
+    ctx = session_context([], "bypass", "/x",
+                          assets_summary="10.0.0.5 (web01): 80/tcp http nginx")
+    assert "attack surface" in ctx.lower()
+    assert "10.0.0.5 (web01): 80/tcp http nginx" in ctx
+    assert "record_service" in ctx
+
+def test_session_context_omits_attack_surface_when_empty():
+    from pentai.cli import session_context
+    assert "attack surface" not in session_context([], "ask", "/x").lower()
+
+def test_report_includes_attack_surface_section(tmp_path):
+    from pentai.cli import build_and_save_report
+    from pentai.sessions import new_session
+    from pentai.tools.assets import record_service_tool
+    from pentai.tools.findings import record_finding
+    s = new_session(tmp_path, now=lambda: "20260804_120000")
+    record_service_tool({"address": "10.0.0.5", "port": 80, "service": "http",
+                         "product": "nginx"}, session_dir=s.dir)
+    record_finding({"title": "RCE", "severity": "critical"}, session_dir=s.dir)
+    md_text, _ = build_and_save_report(s, ["10.0.0.0/24"])
+    assert "## Attack Surface" in md_text
+    assert "10.0.0.5" in md_text and "nginx" in md_text
+    # attack surface appears before the findings section
+    assert md_text.index("## Attack Surface") < md_text.index("## Findings")
 
 def test_main_classic_flag_dispatches_to_classic(monkeypatch):
     import pentai.cli as cli
