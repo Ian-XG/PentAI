@@ -271,6 +271,80 @@ def test_main_settings_tty_select_cancelled_returns_zero_no_save(monkeypatch, ca
     out = capsys.readouterr().out
     assert "cancelled" in out.lower()
 
+def test_parse_session_arg_new_by_default():
+    from pentai.cli import parse_session_arg
+    assert parse_session_arg([]) == ("new", None)
+    assert parse_session_arg(["--tui"]) == ("new", None)
+
+def test_parse_session_arg_continue_latest():
+    from pentai.cli import parse_session_arg
+    assert parse_session_arg(["-c"]) == ("latest", None)
+    assert parse_session_arg(["--continue"]) == ("latest", None)
+    assert parse_session_arg(["--resume"]) == ("latest", None)
+
+def test_parse_session_arg_resume_specific_id():
+    from pentai.cli import parse_session_arg
+    assert parse_session_arg(["--resume", "20260804_101500"]) == ("id", "20260804_101500")
+    assert parse_session_arg(["--resume=20260804_101500"]) == ("id", "20260804_101500")
+
+def test_resolve_session_new_creates_and_snapshots(tmp_path):
+    from pentai.cli import resolve_session
+    s = resolve_session(tmp_path, [], provider="ollama", model="m",
+                        scope=["10.0.0.0/24"], now=lambda: "20260804_101500")
+    assert s.id == "20260804_101500"
+    assert s.meta.provider == "ollama" and s.meta.scope == ["10.0.0.0/24"]
+
+def test_resolve_session_latest_resumes_prior(tmp_path):
+    from pentai.cli import resolve_session
+    from pentai.sessions import new_session
+    from pentai.providers.base import Message
+    old = new_session(tmp_path, model="old", now=lambda: "20260801_090000")
+    old.save_history([Message("user", "prior work")])
+    s = resolve_session(tmp_path, ["-c"], provider="x", model="new", scope=[])
+    assert s.id == "20260801_090000"
+    assert s.load_history()[0].content == "prior work"
+
+def test_resolve_session_latest_falls_back_to_new_when_none(tmp_path):
+    from pentai.cli import resolve_session
+    s = resolve_session(tmp_path, ["-c"], provider="x", model="new", scope=[],
+                        now=lambda: "20260804_101500")
+    assert s.id == "20260804_101500"        # nothing to resume -> fresh session
+
+def test_resolve_session_bad_id_falls_back_to_new(tmp_path):
+    from pentai.cli import resolve_session
+    s = resolve_session(tmp_path, ["--resume", "does_not_exist"], provider="x",
+                        model="m", scope=[], now=lambda: "20260804_101500")
+    assert s.id == "20260804_101500"
+
+def test_format_sessions_lists_newest_with_metadata(tmp_path):
+    from pentai.cli import format_sessions
+    from pentai.sessions import new_session
+    from pentai.providers.base import Message
+    a = new_session(tmp_path, model="gpt-oss:20b", now=lambda: "20260801_090000")
+    a.save_history([Message("user", "enumerate the DC")], now=lambda: "20260801_091000")
+    out = format_sessions(tmp_path)
+    assert "20260801_090000" in out
+    assert "enumerate the DC" in out
+    assert "gpt-oss:20b" in out
+
+def test_format_sessions_empty():
+    import tempfile, pathlib
+    from pentai.cli import format_sessions
+    with tempfile.TemporaryDirectory() as d:
+        out = format_sessions(pathlib.Path(d))
+    assert "no" in out.lower()
+
+def test_build_agent_seeds_history(tmp_path):
+    from pentai.config import Config, ProviderConfig
+    from pentai.scope import Scope
+    from pentai.cli import build_agent
+    from pentai.providers.base import Message
+    cfg = Config(active="a", providers={"a": ProviderConfig("anthropic", "m", "k")})
+    hist = [Message("user", "earlier")]
+    agent = build_agent(cfg, Scope([]), confirm=lambda p: True, session_dir=tmp_path,
+                        history=hist)
+    assert agent.history == hist
+
 def test_main_classic_flag_dispatches_to_classic(monkeypatch):
     import pentai.cli as cli
     calls = {}

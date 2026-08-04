@@ -24,7 +24,9 @@ from .scope import Scope
 from .providers.factory import build_provider
 from .providers.openai_compat import list_models
 from .agent import Agent, ToolSpec, ToolInvocation
-from .providers.base import TextDelta, Notice
+from .providers.base import TextDelta, Notice, Message
+from .sessions import (Session, new_session, latest_session, load_session,
+                       list_sessions)
 from .tools.shell import run_command, RUN_COMMAND_TOOL
 from .tools.notes import save_note, SAVE_NOTE_TOOL
 from .tools.playbooks import load_playbook, LOAD_PLAYBOOK_TOOL, list_playbooks
@@ -103,9 +105,12 @@ def session_context(scope_entries: list[str], mode: str, cwd: str,
         lines.append(f"installed tools: {', '.join(tools)}")
     return "\n".join(lines)
 
+_PENTAI_HOME = Path.home() / ".pentai"
+
 def build_agent(cfg: Config, scope: Scope, confirm: Callable[[str], bool],
                 session_dir: Path, mode_getter: Callable[[], str] = lambda: "ask",
-                context_provider: Callable[[], str] | None = None) -> Agent:
+                context_provider: Callable[[], str] | None = None,
+                history: list[Message] | None = None) -> Agent:
     provider = build_provider(cfg)
     tools = {
         "run_command": ToolSpec(
@@ -119,7 +124,52 @@ def build_agent(cfg: Config, scope: Scope, confirm: Callable[[str], bool],
             LOAD_PLAYBOOK_TOOL,
             lambda args: load_playbook(args.get("name", ""), skills_dir=_SKILLS_DIR)),
     }
-    return Agent(provider, _SYSTEM_PROMPT, tools, context_provider=context_provider)
+    return Agent(provider, _SYSTEM_PROMPT, tools, history=history,
+                 context_provider=context_provider)
+
+def parse_session_arg(argv: list[str]) -> tuple[str, str | None]:
+    """Decide which session to open from the command line. Returns a (kind, id)
+    pair: ("new", None) fresh (default), ("latest", None) resume most recent
+    (-c/--continue/--resume), or ("id", <id>) resume a specific engagement
+    (--resume <id> / --resume=<id>)."""
+    for i, a in enumerate(argv):
+        if a in ("-c", "--continue"):
+            return ("latest", None)
+        if a == "--resume":
+            nxt = argv[i + 1] if i + 1 < len(argv) else None
+            if nxt and not nxt.startswith("-"):
+                return ("id", nxt)
+            return ("latest", None)
+        if a.startswith("--resume="):
+            return ("id", a.split("=", 1)[1])
+    return ("new", None)
+
+def resolve_session(base: Path, argv: list[str], *, provider: str, model: str,
+                    scope: list[str], now=None) -> Session:
+    """Open the session the command line asked for, creating a fresh one when
+    there is nothing to resume (empty store, or an unknown id)."""
+    kind, sid = parse_session_arg(argv)
+    kw = {} if now is None else {"now": now}
+    if kind == "latest":
+        s = latest_session(base)
+        if s is not None:
+            return s
+    elif kind == "id":
+        s = load_session(base, sid)
+        if s is not None:
+            return s
+    return new_session(base, provider=provider, model=model, scope=scope, **kw)
+
+def format_sessions(base: Path) -> str:
+    metas = list_sessions(base)
+    if not metas:
+        return "no saved sessions yet - each run starts one; resume with 'pentai --resume'."
+    lines = ["saved sessions (resume with /resume <id>):"]
+    for m in metas:
+        title = m.title or "(untitled)"
+        prov = f"{m.provider}:{m.model}".strip(":") or "?"
+        lines.append(f"  {m.id}  {m.turns:>3} turns  {prov:<24} {title}")
+    return "\n".join(lines)
 
 def model_command(provider, args: list[str], *, list_models_fn=list_models,
                   persist=set_active_model) -> str:
@@ -164,7 +214,6 @@ def main_classic(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     fx = "--no-fx" not in argv
     console = Console()
-    session_id = time.strftime("%Y%m%d_%H%M%S")
     if needs_onboarding():
         onboard_palette = get_palette("green")
         try:
@@ -192,6 +241,10 @@ def main_classic(argv: list[str] | None = None) -> int:
         env_hint = pc.api_key_env or "the provider's API key env var"
         console.print(f"[!] no API key for '{cfg.active}'. Run /setup, or set {env_hint}.",
                       style=palette["alert"])
+    session = resolve_session(_PENTAI_HOME, argv, provider=cfg.active,
+                              model=cfg.providers[cfg.active].model, scope=cfg.scope)
+    history = session.load_history()
+    session_id = session.id
     if fx:
         for line in boot_lines():
             console.print(line, style=palette["dim"])
@@ -201,12 +254,15 @@ def main_classic(argv: list[str] | None = None) -> int:
                    playbooks=list_playbooks(_SKILLS_DIR),
                    tools=AGENT_TOOL_NAMES,
                    modes=MODES, scope_count=len(cfg.scope), session_id=session_id)
+    if history:
+        console.print(f"[ resumed session {session_id} - {len(history)} messages restored ]",
+                      style=palette["accent"], markup=False)
     _tool_results = check_tools()
     render_toolcheck(console, palette, _tool_results)
     installed_tools = [name for name, ok in _tool_results if ok]
 
     scope = Scope(cfg.scope)
-    session_dir = Path.home() / ".pentai" / "session"
+    session_dir = session.dir
     cmds = 0
 
     spinner_stop: dict = {"fn": lambda: None}
@@ -235,11 +291,12 @@ def main_classic(argv: list[str] | None = None) -> int:
         return base
 
     agent = build_agent(cfg, scope, confirm, session_dir, mode_getter,
-                        context_provider=lambda: session_context(scope.entries, mode_ref["mode"], os.getcwd(), installed_tools))
-    session: PromptSession = PromptSession(key_bindings=kb, bottom_toolbar=bottom_toolbar)
+                        context_provider=lambda: session_context(scope.entries, mode_ref["mode"], os.getcwd(), installed_tools),
+                        history=history)
+    prompt_session: PromptSession = PromptSession(key_bindings=kb, bottom_toolbar=bottom_toolbar)
     while True:
         try:
-            line = session.prompt("root@pentai:~# ")
+            line = prompt_session.prompt("root@pentai:~# ")
         except (EOFError, KeyboardInterrupt):
             break
         if not line.strip():
@@ -269,11 +326,29 @@ def main_classic(argv: list[str] | None = None) -> int:
                 console.push_theme(markdown_theme(palette))
                 scope = Scope(cfg.scope)
                 agent = build_agent(cfg, scope, confirm, session_dir, mode_getter,
-                                    context_provider=lambda: session_context(scope.entries, mode_ref["mode"], os.getcwd(), installed_tools))
+                                    context_provider=lambda: session_context(scope.entries, mode_ref["mode"], os.getcwd(), installed_tools),
+                                    history=agent.history)
                 console.print("[ OK ] saved ~/.pentai/config.yaml", style=palette["accent"])
                 continue
             if result == "__model__":
                 console.print(model_command(agent.provider, slash[1]),
+                              style=palette["accent"], markup=False)
+                continue
+            if result == "__sessions__":
+                console.print(format_sessions(_PENTAI_HOME), style=palette["dim"], markup=False)
+                continue
+            if result == "__resume__":
+                target = load_session(_PENTAI_HOME, slash[1][0]) if slash[1] else latest_session(_PENTAI_HOME)
+                if target is None:
+                    console.print("[no such session - try /sessions]", style=palette["alert"], markup=False)
+                    continue
+                session.save_history(agent.history)   # checkpoint the one we're leaving
+                session = target
+                session_dir = session.dir
+                agent = build_agent(cfg, scope, confirm, session_dir, mode_getter,
+                                    context_provider=lambda: session_context(scope.entries, mode_ref["mode"], os.getcwd(), installed_tools),
+                                    history=session.load_history())
+                console.print(f"[ resumed {session.id} - {len(agent.history)} messages ]",
                               style=palette["accent"], markup=False)
                 continue
             if result == "__clear__":
@@ -345,6 +420,7 @@ def main_classic(argv: list[str] | None = None) -> int:
         finally:
             stop()
             spinner_stop["fn"] = lambda: None
+            session.save_history(agent.history)   # persist after every turn
     console.print("bye", style=palette["dim"])
     return 0
 
@@ -437,7 +513,6 @@ def main_settings(argv: list[str] | None = None) -> int:
 
 def main_tui(argv: list[str]) -> int:
     console = Console()
-    session_id = time.strftime("%Y%m%d_%H%M%S")
     if needs_onboarding():
         onboard_palette = get_palette("green")
         try:
@@ -460,7 +535,11 @@ def main_tui(argv: list[str]) -> int:
     _tool_results = check_tools()
     installed_tools = [name for name, ok in _tool_results if ok]
     scope = Scope(cfg.scope)
-    session_dir = Path.home() / ".pentai" / "session"
+    session = resolve_session(_PENTAI_HOME, argv, provider=cfg.active,
+                              model=cfg.providers[cfg.active].model, scope=cfg.scope)
+    session_dir = session.dir
+    session_id = session.id
+    restored = session.load_history()
 
     output = OutputBuffer()
     if cfg_error is not None:
@@ -478,6 +557,10 @@ def main_tui(argv: list[str]) -> int:
         playbooks=list_playbooks(_SKILLS_DIR), tools=AGENT_TOOL_NAMES, modes=MODES,
         scope_count=len(cfg.scope), session_id=session_id), width=w))
     output.append_renderer(lambda w: _capture_console(lambda c: render_toolcheck(c, palette, _tool_results), width=w))
+    if restored:
+        output.append(Text(
+            f"[ resumed session {session_id} - {len(restored)} messages restored ]",
+            style=palette["accent"]), theme=markdown_theme(palette))
 
     mode_ref = {"mode": "bypass"}
     cmds_ref = {"n": 0}
@@ -519,7 +602,8 @@ def main_tui(argv: list[str]) -> int:
         return answer["v"]
 
     agent = build_agent(cfg, scope, _confirm, session_dir, lambda: mode_ref["mode"],
-                        context_provider=lambda: session_context(scope.entries, mode_ref["mode"], os.getcwd(), installed_tools))
+                        context_provider=lambda: session_context(scope.entries, mode_ref["mode"], os.getcwd(), installed_tools),
+                        history=restored)
 
     def _start_turn(text: str) -> None:
         thinking["start"] = time.time()
@@ -588,6 +672,7 @@ def main_tui(argv: list[str]) -> int:
             finally:
                 def _done() -> None:
                     thinking["start"] = None
+                    session.save_history(agent.history)   # persist after every turn
                     controller.finish()
                     app.invalidate()
                 _run_on_loop(_done)
@@ -596,6 +681,7 @@ def main_tui(argv: list[str]) -> int:
     controller = TurnController(start_turn=_start_turn)
 
     def _on_submit(text: str) -> None:
+        nonlocal session, session_dir, agent
         text = text.strip()
         if not text:
             return
@@ -631,6 +717,29 @@ def main_tui(argv: list[str]) -> int:
             if result == "__model__":
                 output.append(Text(model_command(agent.provider, args), style=palette["accent"]),
                     theme=markdown_theme(palette))
+                app.invalidate()
+                return
+            if result == "__sessions__":
+                output.append(Text(format_sessions(_PENTAI_HOME), style=palette["dim"]),
+                    theme=markdown_theme(palette))
+                app.invalidate()
+                return
+            if result == "__resume__":
+                target = load_session(_PENTAI_HOME, args[0]) if args else latest_session(_PENTAI_HOME)
+                if target is None:
+                    output.append(Text("[no such session - try /sessions]", style=palette["alert"]),
+                        theme=markdown_theme(palette))
+                    app.invalidate()
+                    return
+                session.save_history(agent.history)   # checkpoint the one we're leaving
+                session = target
+                session_dir = session.dir
+                restored_now = session.load_history()
+                agent = build_agent(cfg, scope, _confirm, session_dir, lambda: mode_ref["mode"],
+                                    context_provider=lambda: session_context(scope.entries, mode_ref["mode"], os.getcwd(), installed_tools),
+                                    history=restored_now)
+                output.append(Text(f"[ resumed {session.id} - {len(restored_now)} messages ]",
+                    style=palette["accent"]), theme=markdown_theme(palette))
                 app.invalidate()
                 return
             if result == "__clear__":

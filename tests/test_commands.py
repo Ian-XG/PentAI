@@ -72,6 +72,16 @@ def test_model_sentinel_and_help():
     assert "/model" in handle_slash("help", [], scope=Scope([]))
     assert "/model" in [c for c, _ in SLASH_COMMANDS]
 
+def test_sessions_and_resume_sentinels_and_help():
+    from pentai.scope import Scope
+    from pentai.commands import handle_slash, SLASH_COMMANDS
+    assert handle_slash("sessions", [], scope=Scope([])) == "__sessions__"
+    assert handle_slash("resume", ["20260804_101500"], scope=Scope([])) == "__resume__"
+    h = handle_slash("help", [], scope=Scope([]))
+    assert "/sessions" in h and "/resume" in h
+    names = [c for c, _ in SLASH_COMMANDS]
+    assert "/sessions" in names and "/resume" in names
+
 def test_slash_commands_metadata():
     from pentai.commands import SLASH_COMMANDS
     names = [c for c, _ in SLASH_COMMANDS]
