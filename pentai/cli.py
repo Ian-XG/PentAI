@@ -30,7 +30,8 @@ from .sessions import (Session, new_session, latest_session, load_session,
 from .tools.shell import run_command, RUN_COMMAND_TOOL
 from .tools.notes import save_note, SAVE_NOTE_TOOL
 from .tools.findings import record_finding, RECORD_FINDING_TOOL
-from .tools.assets import record_service_tool, RECORD_SERVICE_TOOL
+from .tools.assets import record_service_tool, RECORD_SERVICE_TOOL, ingest_nmap
+from .recon_parse import is_nmap_command
 from .tools.playbooks import load_playbook, LOAD_PLAYBOOK_TOOL, list_playbooks
 from .findings import load_findings, render_report, summarize_findings
 from .assets import load_assets, summarize_assets, render_assets
@@ -123,11 +124,18 @@ def build_agent(cfg: Config, scope: Scope, confirm: Callable[[str], bool],
                 context_provider: Callable[[], str] | None = None,
                 history: list[Message] | None = None) -> Agent:
     provider = build_provider(cfg)
+
+    def _run(args: dict) -> str:
+        cmd = args.get("command", "")
+        out = run_command(cmd, scope=scope, confirm=confirm, mode=mode_getter())
+        if is_nmap_command(cmd):
+            n = ingest_nmap(session_dir, out)
+            if n:
+                out += f"\n\n[auto-mapped {n} service(s) to the asset map - see /hosts]"
+        return out
+
     tools = {
-        "run_command": ToolSpec(
-            RUN_COMMAND_TOOL,
-            lambda args: run_command(args.get("command", ""), scope=scope,
-                                     confirm=confirm, mode=mode_getter())),
+        "run_command": ToolSpec(RUN_COMMAND_TOOL, _run),
         "save_note": ToolSpec(
             SAVE_NOTE_TOOL,
             lambda args: save_note(args.get("text", ""), session_dir=session_dir)),

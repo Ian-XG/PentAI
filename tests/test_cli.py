@@ -384,6 +384,33 @@ def test_build_agent_wires_record_finding_tool(tmp_path):
     assert "record_finding" in agent.tools and "record_service" in agent.tools
     assert set(agent.tools) == set(AGENT_TOOL_NAMES)
 
+def test_run_command_auto_ingests_nmap(tmp_path, monkeypatch):
+    import pentai.cli as cli
+    from pentai.config import Config, ProviderConfig
+    from pentai.scope import Scope
+    from pentai.assets import load_assets
+    nmap_out = ("Nmap scan report for 10.0.0.5\nPORT   STATE SERVICE VERSION\n"
+                "22/tcp open  ssh     OpenSSH 8.2p1\n80/tcp open  http    nginx 1.18.0\n")
+    monkeypatch.setattr(cli, "run_command", lambda command, **kw: nmap_out)
+    cfg = Config(active="a", providers={"a": ProviderConfig("anthropic", "m", "k")})
+    agent = cli.build_agent(cfg, Scope([]), confirm=lambda p: True, session_dir=tmp_path)
+    result = agent.tools["run_command"].run({"command": "nmap -sV 10.0.0.5"})
+    assert "auto-mapped 2 service(s)" in result
+    hosts = load_assets(tmp_path)
+    assert {s.port for s in hosts[0].services} == {22, 80}
+
+def test_run_command_non_nmap_does_not_ingest(tmp_path, monkeypatch):
+    import pentai.cli as cli
+    from pentai.config import Config, ProviderConfig
+    from pentai.scope import Scope
+    from pentai.assets import load_assets
+    monkeypatch.setattr(cli, "run_command", lambda command, **kw: "some output")
+    cfg = Config(active="a", providers={"a": ProviderConfig("anthropic", "m", "k")})
+    agent = cli.build_agent(cfg, Scope([]), confirm=lambda p: True, session_dir=tmp_path)
+    result = agent.tools["run_command"].run({"command": "ls -la"})
+    assert "auto-mapped" not in result
+    assert load_assets(tmp_path) == []
+
 def test_session_context_includes_attack_surface():
     from pentai.cli import session_context
     ctx = session_context([], "bypass", "/x",

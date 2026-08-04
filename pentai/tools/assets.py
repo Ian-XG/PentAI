@@ -1,6 +1,22 @@
 from pathlib import Path
 from ..providers.base import Tool
 from ..assets import record_service
+from ..recon_parse import parse_nmap
+
+def ingest_nmap(session_dir: Path, output: str) -> int:
+    """Parse nmap output and fold every open service into the asset map. Returns
+    the number of services recorded. This is the automatic recon loop: the agent
+    runs a scan, PentAI captures the surface without the model having to."""
+    count = 0
+    for h in parse_nmap(output):
+        for s in h.services:
+            if "open" not in s.state:
+                continue
+            record_service(session_dir, address=h.address, port=s.port, proto=s.proto,
+                           state=s.state, service=s.name, product=s.product,
+                           version=s.version, hostname=h.hostname, os=h.os)
+            count += 1
+    return count
 
 def record_service_tool(args: dict, *, session_dir: Path) -> str:
     address = (args.get("address") or "").strip()
