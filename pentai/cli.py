@@ -35,6 +35,7 @@ from .recon_parse import is_nmap_command
 from .tools.playbooks import load_playbook, LOAD_PLAYBOOK_TOOL, list_playbooks
 from .findings import load_findings, render_report, summarize_findings
 from .assets import load_assets, summarize_assets, render_assets
+from .intel import intel_leads, service_intel
 from .commands import parse_slash, handle_slash
 from .permissions import MODES, next_mode
 from .toolcheck import check_tools
@@ -101,7 +102,8 @@ def friendly_error(e: Exception) -> str:
 
 def session_context(scope_entries: list[str], mode: str, cwd: str,
                     tools: list[str] | None = None,
-                    findings_summary: str = "", assets_summary: str = "") -> str:
+                    findings_summary: str = "", assets_summary: str = "",
+                    leads: str = "") -> str:
     scope = ", ".join(scope_entries) if scope_entries else "(none set)"
     lines = [f"--- session context ---",
              f"authorized scope: {scope}",
@@ -112,10 +114,22 @@ def session_context(scope_entries: list[str], mode: str, cwd: str,
     if assets_summary:
         lines.append("attack surface mapped so far (record new hosts/ports with "
                      "record_service):\n" + assets_summary)
+    if leads:
+        lines.append("recon leads (suggested next moves; verify before reporting):\n"
+                     + leads)
     if findings_summary:
         lines.append("findings so far (do not re-report; build on these):\n"
                      + findings_summary)
     return "\n".join(lines)
+
+def _live_context(scope: Scope, mode: str, cwd: str, installed_tools: list[str],
+                  session_dir: Path) -> str:
+    """Assemble the per-turn context from everything PentAI has learned this
+    engagement: attack surface, recon leads, and findings."""
+    hosts = load_assets(session_dir)
+    return session_context(scope.entries, mode, cwd, installed_tools,
+                           summarize_findings(load_findings(session_dir)),
+                           summarize_assets(hosts), intel_leads(hosts))
 
 _PENTAI_HOME = Path.home() / ".pentai"
 
@@ -343,7 +357,7 @@ def main_classic(argv: list[str] | None = None) -> int:
         return base
 
     agent = build_agent(cfg, scope, confirm, session_dir, mode_getter,
-                        context_provider=lambda: session_context(scope.entries, mode_ref["mode"], os.getcwd(), installed_tools, summarize_findings(load_findings(session_dir)), summarize_assets(load_assets(session_dir))),
+                        context_provider=lambda: _live_context(scope, mode_ref["mode"], os.getcwd(), installed_tools, session_dir),
                         history=history)
     prompt_session: PromptSession = PromptSession(key_bindings=kb, bottom_toolbar=bottom_toolbar)
     while True:
@@ -378,7 +392,7 @@ def main_classic(argv: list[str] | None = None) -> int:
                 console.push_theme(markdown_theme(palette))
                 scope = Scope(cfg.scope)
                 agent = build_agent(cfg, scope, confirm, session_dir, mode_getter,
-                                    context_provider=lambda: session_context(scope.entries, mode_ref["mode"], os.getcwd(), installed_tools, summarize_findings(load_findings(session_dir)), summarize_assets(load_assets(session_dir))),
+                                    context_provider=lambda: _live_context(scope, mode_ref["mode"], os.getcwd(), installed_tools, session_dir),
                                     history=agent.history)
                 console.print("[ OK ] saved ~/.pentai/config.yaml", style=palette["accent"])
                 continue
@@ -398,7 +412,7 @@ def main_classic(argv: list[str] | None = None) -> int:
                 session = target
                 session_dir = session.dir
                 agent = build_agent(cfg, scope, confirm, session_dir, mode_getter,
-                                    context_provider=lambda: session_context(scope.entries, mode_ref["mode"], os.getcwd(), installed_tools, summarize_findings(load_findings(session_dir)), summarize_assets(load_assets(session_dir))),
+                                    context_provider=lambda: _live_context(scope, mode_ref["mode"], os.getcwd(), installed_tools, session_dir),
                                     history=session.load_history())
                 console.print(f"[ resumed {session.id} - {len(agent.history)} messages ]",
                               style=palette["accent"], markup=False)
@@ -420,6 +434,11 @@ def main_classic(argv: list[str] | None = None) -> int:
                 else:
                     console.print("[no hosts mapped yet - the agent maps them with record_service]",
                                   style=palette["dim"], markup=False)
+                continue
+            if result == "__intel__":
+                leads = intel_leads(load_assets(session_dir))
+                console.print(leads or "[no leads yet - map some services first (nmap / record_service)]",
+                              style=palette["accent"] if leads else palette["dim"], markup=False)
                 continue
             if result == "__findings__":
                 summary = summarize_findings(load_findings(session_dir))
@@ -667,7 +686,7 @@ def main_tui(argv: list[str]) -> int:
         return answer["v"]
 
     agent = build_agent(cfg, scope, _confirm, session_dir, lambda: mode_ref["mode"],
-                        context_provider=lambda: session_context(scope.entries, mode_ref["mode"], os.getcwd(), installed_tools, summarize_findings(load_findings(session_dir)), summarize_assets(load_assets(session_dir))),
+                        context_provider=lambda: _live_context(scope, mode_ref["mode"], os.getcwd(), installed_tools, session_dir),
                         history=restored)
 
     def _start_turn(text: str) -> None:
@@ -811,7 +830,7 @@ def main_tui(argv: list[str]) -> int:
                 session_dir = session.dir
                 restored_now = session.load_history()
                 agent = build_agent(cfg, scope, _confirm, session_dir, lambda: mode_ref["mode"],
-                                    context_provider=lambda: session_context(scope.entries, mode_ref["mode"], os.getcwd(), installed_tools, summarize_findings(load_findings(session_dir)), summarize_assets(load_assets(session_dir))),
+                                    context_provider=lambda: _live_context(scope, mode_ref["mode"], os.getcwd(), installed_tools, session_dir),
                                     history=restored_now)
                 output.append(Text(f"[ resumed {session.id} - {len(restored_now)} messages ]",
                     style=palette["accent"]), theme=markdown_theme(palette))
@@ -838,6 +857,14 @@ def main_tui(argv: list[str]) -> int:
                     output.append(Text(
                         "[no hosts mapped yet - the agent maps them with record_service]",
                         style=palette["dim"]), theme=markdown_theme(palette))
+                app.invalidate()
+                return
+            if result == "__intel__":
+                leads = intel_leads(load_assets(session_dir))
+                output.append(Text(
+                    leads or "[no leads yet - map some services first (nmap / record_service)]",
+                    style=palette["accent"] if leads else palette["dim"]),
+                    theme=markdown_theme(palette))
                 app.invalidate()
                 return
             if result == "__findings__":

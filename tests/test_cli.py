@@ -411,6 +411,24 @@ def test_run_command_non_nmap_does_not_ingest(tmp_path, monkeypatch):
     assert "auto-mapped" not in result
     assert load_assets(tmp_path) == []
 
+def test_session_context_includes_recon_leads():
+    from pentai.cli import session_context
+    ctx = session_context([], "bypass", "/x",
+                          leads="10.0.0.5:21 ftp -> try anon login  | KNOWN: CVE-2011-2523")
+    assert "recon leads" in ctx.lower()
+    assert "CVE-2011-2523" in ctx
+
+def test_live_context_folds_in_assets_and_leads(tmp_path):
+    from pentai.cli import _live_context
+    from pentai.scope import Scope
+    from pentai.assets import record_service
+    record_service(tmp_path, address="10.0.0.5", port=21, service="ftp",
+                   product="vsftpd", version="2.3.4")
+    ctx = _live_context(Scope([]), "bypass", "/x", ["nmap"], tmp_path)
+    assert "attack surface" in ctx.lower()
+    assert "recon leads" in ctx.lower()
+    assert "CVE-2011-2523" in ctx           # known-vuln lead surfaced from mapped service
+
 def test_session_context_includes_attack_surface():
     from pentai.cli import session_context
     ctx = session_context([], "bypass", "/x",
