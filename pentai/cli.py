@@ -29,7 +29,9 @@ from .sessions import (Session, new_session, latest_session, load_session,
                        list_sessions)
 from .tools.shell import run_command, RUN_COMMAND_TOOL
 from .tools.notes import save_note, SAVE_NOTE_TOOL
+from .tools.findings import record_finding, RECORD_FINDING_TOOL
 from .tools.playbooks import load_playbook, LOAD_PLAYBOOK_TOOL, list_playbooks
+from .findings import load_findings, render_report, summarize_findings
 from .commands import parse_slash, handle_slash
 from .permissions import MODES, next_mode
 from .toolcheck import check_tools
@@ -48,7 +50,7 @@ from .ui.runner import TurnController
 _SKILLS_DIR = Path(__file__).parent / "skills"
 _SYSTEM_PROMPT = (Path(__file__).parent / "prompts" / "system.md").read_text()
 
-AGENT_TOOL_NAMES = ["run_command", "save_note", "load_playbook"]
+AGENT_TOOL_NAMES = ["run_command", "save_note", "record_finding", "load_playbook"]
 
 def _play_sigil_glitch(console, palette) -> None:
     try:
@@ -95,7 +97,8 @@ def friendly_error(e: Exception) -> str:
     return f"error: {msg}"
 
 def session_context(scope_entries: list[str], mode: str, cwd: str,
-                    tools: list[str] | None = None) -> str:
+                    tools: list[str] | None = None,
+                    findings_summary: str = "") -> str:
     scope = ", ".join(scope_entries) if scope_entries else "(none set)"
     lines = [f"--- session context ---",
              f"authorized scope: {scope}",
@@ -103,6 +106,9 @@ def session_context(scope_entries: list[str], mode: str, cwd: str,
              f"working directory: {cwd}"]
     if tools:
         lines.append(f"installed tools: {', '.join(tools)}")
+    if findings_summary:
+        lines.append("findings so far (do not re-report; build on these):\n"
+                     + findings_summary)
     return "\n".join(lines)
 
 _PENTAI_HOME = Path.home() / ".pentai"
@@ -120,6 +126,9 @@ def build_agent(cfg: Config, scope: Scope, confirm: Callable[[str], bool],
         "save_note": ToolSpec(
             SAVE_NOTE_TOOL,
             lambda args: save_note(args.get("text", ""), session_dir=session_dir)),
+        "record_finding": ToolSpec(
+            RECORD_FINDING_TOOL,
+            lambda args: record_finding(args, session_dir=session_dir)),
         "load_playbook": ToolSpec(
             LOAD_PLAYBOOK_TOOL,
             lambda args: load_playbook(args.get("name", ""), skills_dir=_SKILLS_DIR)),
@@ -159,6 +168,24 @@ def resolve_session(base: Path, argv: list[str], *, provider: str, model: str,
         if s is not None:
             return s
     return new_session(base, provider=provider, model=model, scope=scope, **kw)
+
+def build_and_save_report(session: Session, scope_entries: list[str]) -> tuple[str, Path]:
+    """Render the engagement report from structured findings + freeform notes and
+    write it to report.md in the session dir (0600). Returns (markdown, path)."""
+    findings = load_findings(session.dir)
+    notes_path = session.notes_path
+    notes = notes_path.read_text() if notes_path.exists() else ""
+    md_text = render_report(findings, notes=notes, scope=scope_entries,
+                            date=session.meta.created_at,
+                            title=f"PentAI Engagement Report - {session.id}")
+    out = session.dir / "report.md"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(md_text)
+    try:
+        os.chmod(out, 0o600)
+    except OSError:
+        pass
+    return md_text, out
 
 def format_sessions(base: Path) -> str:
     metas = list_sessions(base)
@@ -291,7 +318,7 @@ def main_classic(argv: list[str] | None = None) -> int:
         return base
 
     agent = build_agent(cfg, scope, confirm, session_dir, mode_getter,
-                        context_provider=lambda: session_context(scope.entries, mode_ref["mode"], os.getcwd(), installed_tools),
+                        context_provider=lambda: session_context(scope.entries, mode_ref["mode"], os.getcwd(), installed_tools, summarize_findings(load_findings(session_dir))),
                         history=history)
     prompt_session: PromptSession = PromptSession(key_bindings=kb, bottom_toolbar=bottom_toolbar)
     while True:
@@ -326,7 +353,7 @@ def main_classic(argv: list[str] | None = None) -> int:
                 console.push_theme(markdown_theme(palette))
                 scope = Scope(cfg.scope)
                 agent = build_agent(cfg, scope, confirm, session_dir, mode_getter,
-                                    context_provider=lambda: session_context(scope.entries, mode_ref["mode"], os.getcwd(), installed_tools),
+                                    context_provider=lambda: session_context(scope.entries, mode_ref["mode"], os.getcwd(), installed_tools, summarize_findings(load_findings(session_dir))),
                                     history=agent.history)
                 console.print("[ OK ] saved ~/.pentai/config.yaml", style=palette["accent"])
                 continue
@@ -346,7 +373,7 @@ def main_classic(argv: list[str] | None = None) -> int:
                 session = target
                 session_dir = session.dir
                 agent = build_agent(cfg, scope, confirm, session_dir, mode_getter,
-                                    context_provider=lambda: session_context(scope.entries, mode_ref["mode"], os.getcwd(), installed_tools),
+                                    context_provider=lambda: session_context(scope.entries, mode_ref["mode"], os.getcwd(), installed_tools, summarize_findings(load_findings(session_dir))),
                                     history=session.load_history())
                 console.print(f"[ resumed {session.id} - {len(agent.history)} messages ]",
                               style=palette["accent"], markup=False)
@@ -361,13 +388,15 @@ def main_classic(argv: list[str] | None = None) -> int:
                 else:
                     console.print("[no notes yet]", style=palette["dim"], markup=False)
                 continue
+            if result == "__findings__":
+                summary = summarize_findings(load_findings(session_dir))
+                console.print(summary or "[no findings yet - the agent records them with record_finding]",
+                              style=palette["dim"] if not summary else palette["accent"], markup=False)
+                continue
             if result == "__report__":
-                notes = session_dir / "notes.md"
-                if notes.exists():
-                    console.print(Markdown("# PentAI Session Report\n\n" + notes.read_text()))
-                else:
-                    console.print("[no findings recorded yet - the agent saves them with save_note]",
-                                  style=palette["dim"], markup=False)
+                md_text, out = build_and_save_report(session, scope.entries)
+                console.print(Markdown(md_text))
+                console.print(f"[ saved report to {out} ]", style=palette["accent"], markup=False)
                 continue
             if result == "__tools__":
                 render_toolcheck(console, palette, _tool_results)
@@ -399,10 +428,13 @@ def main_classic(argv: list[str] | None = None) -> int:
         def render_tool(ev):
             nonlocal cmds
             stop()
-            cmds += 1
-            cmd = ev.arguments.get("command", ev.arguments)
-            console.print(f"[EXEC] {cmd}", style=palette["accent"], markup=False)
-            console.print(ev.result, style=palette["dim"], markup=False)
+            if ev.name == "run_command":
+                cmds += 1
+                cmd = ev.arguments.get("command", ev.arguments)
+                console.print(f"[EXEC] {cmd}", style=palette["accent"], markup=False)
+                console.print(ev.result, style=palette["dim"], markup=False)
+            else:
+                console.print(ev.result, style=palette["dim"], markup=False)
 
         def render_error(e):
             stop()
@@ -602,7 +634,7 @@ def main_tui(argv: list[str]) -> int:
         return answer["v"]
 
     agent = build_agent(cfg, scope, _confirm, session_dir, lambda: mode_ref["mode"],
-                        context_provider=lambda: session_context(scope.entries, mode_ref["mode"], os.getcwd(), installed_tools),
+                        context_provider=lambda: session_context(scope.entries, mode_ref["mode"], os.getcwd(), installed_tools, summarize_findings(load_findings(session_dir))),
                         history=restored)
 
     def _start_turn(text: str) -> None:
@@ -624,6 +656,11 @@ def main_tui(argv: list[str]) -> int:
                     output.append(Text("[note saved]", style=palette["dim"]), theme=markdown_theme(palette))
                     app.invalidate()
                 _run_on_loop(_append_note)
+            elif ev.name == "record_finding":
+                def _append_finding(result: str = ev.result) -> None:
+                    output.append(Text(result, style=palette["accent"]), theme=markdown_theme(palette))
+                    app.invalidate()
+                _run_on_loop(_append_finding)
             elif ev.name == "load_playbook":
                 def _append_playbook(result: str = ev.result) -> None:
                     output.append(md(result), theme=markdown_theme(palette))
@@ -736,7 +773,7 @@ def main_tui(argv: list[str]) -> int:
                 session_dir = session.dir
                 restored_now = session.load_history()
                 agent = build_agent(cfg, scope, _confirm, session_dir, lambda: mode_ref["mode"],
-                                    context_provider=lambda: session_context(scope.entries, mode_ref["mode"], os.getcwd(), installed_tools),
+                                    context_provider=lambda: session_context(scope.entries, mode_ref["mode"], os.getcwd(), installed_tools, summarize_findings(load_findings(session_dir))),
                                     history=restored_now)
                 output.append(Text(f"[ resumed {session.id} - {len(restored_now)} messages ]",
                     style=palette["accent"]), theme=markdown_theme(palette))
@@ -755,15 +792,19 @@ def main_tui(argv: list[str]) -> int:
                         theme=markdown_theme(palette))
                 app.invalidate()
                 return
+            if result == "__findings__":
+                summary = summarize_findings(load_findings(session_dir))
+                output.append(Text(
+                    summary or "[no findings yet - the agent records them with record_finding]",
+                    style=palette["accent"] if summary else palette["dim"]),
+                    theme=markdown_theme(palette))
+                app.invalidate()
+                return
             if result == "__report__":
-                notes = session_dir / "notes.md"
-                if notes.exists():
-                    output.append(md("# PentAI Session Report\n\n" + notes.read_text()),
-                        theme=markdown_theme(palette))
-                else:
-                    output.append(Text(
-                        "[no findings recorded yet - the agent saves them with save_note]",
-                        style=palette["dim"]), theme=markdown_theme(palette))
+                md_text, out = build_and_save_report(session, scope.entries)
+                output.append(md(md_text), theme=markdown_theme(palette))
+                output.append(Text(f"[ saved report to {out} ]", style=palette["accent"]),
+                    theme=markdown_theme(palette))
                 app.invalidate()
                 return
             if result == "__tools__":

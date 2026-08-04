@@ -82,6 +82,13 @@ def test_sessions_and_resume_sentinels_and_help():
     names = [c for c, _ in SLASH_COMMANDS]
     assert "/sessions" in names and "/resume" in names
 
+def test_findings_sentinel_and_help():
+    from pentai.scope import Scope
+    from pentai.commands import handle_slash, SLASH_COMMANDS
+    assert handle_slash("findings", [], scope=Scope([])) == "__findings__"
+    assert "/findings" in handle_slash("help", [], scope=Scope([]))
+    assert "/findings" in [c for c, _ in SLASH_COMMANDS]
+
 def test_slash_commands_metadata():
     from pentai.commands import SLASH_COMMANDS
     names = [c for c, _ in SLASH_COMMANDS]

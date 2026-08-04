@@ -37,11 +37,11 @@ def test_model_command_anthropic_has_no_list():
     out2 = model_command(prov, ["claude-sonnet-4"], persist=lambda m: None)
     assert prov.model == "claude-sonnet-4" and "claude-sonnet-4" in out2
 
-def test_build_agent_wires_three_tools(tmp_path: Path):
+def test_build_agent_wires_all_tools(tmp_path: Path):
     cfg = Config(active="a", providers={"a": ProviderConfig("anthropic", "claude-opus-4", "k")})
     agent = build_agent(cfg, Scope([]), confirm=lambda p: True, session_dir=tmp_path)
     assert isinstance(agent, Agent)
-    assert set(agent.tools) == {"run_command", "save_note", "load_playbook"}
+    assert set(agent.tools) == {"run_command", "save_note", "record_finding", "load_playbook"}
 
 def test_provider_ready_true_with_key():
     from pentai.config import Config, ProviderConfig
@@ -344,6 +344,44 @@ def test_build_agent_seeds_history(tmp_path):
     agent = build_agent(cfg, Scope([]), confirm=lambda p: True, session_dir=tmp_path,
                         history=hist)
     assert agent.history == hist
+
+def test_session_context_includes_findings_summary():
+    from pentai.cli import session_context
+    ctx = session_context([], "ask", "/home/x", findings_summary="F-001 [HIGH] SQLi (10.0.0.5)")
+    assert "F-001 [HIGH] SQLi" in ctx
+    assert "do not re-report" in ctx.lower()
+
+def test_session_context_omits_findings_when_empty():
+    from pentai.cli import session_context
+    ctx = session_context([], "ask", "/home/x")
+    assert "findings so far" not in ctx.lower()
+
+def test_build_and_save_report_writes_file(tmp_path):
+    import os
+    from pentai.cli import build_and_save_report
+    from pentai.sessions import new_session
+    from pentai.tools.findings import record_finding
+    from pentai.tools.notes import save_note
+    s = new_session(tmp_path, now=lambda: "20260804_120000")
+    record_finding({"title": "RCE", "severity": "critical", "target": "10.0.0.9",
+                    "evidence": "payload", "remediation": "patch"}, session_dir=s.dir)
+    save_note("recon: 3 open ports", session_dir=s.dir)
+    md_text, out = build_and_save_report(s, ["10.0.0.0/24"])
+    assert out == s.dir / "report.md"
+    assert out.exists()
+    assert (os.stat(out).st_mode & 0o777) == 0o600     # report stays private
+    assert "RCE" in md_text and "10.0.0.9" in md_text
+    assert "recon: 3 open ports" in md_text            # notes folded in
+    assert out.read_text() == md_text
+
+def test_build_agent_wires_record_finding_tool(tmp_path):
+    from pentai.config import Config, ProviderConfig
+    from pentai.scope import Scope
+    from pentai.cli import build_agent, AGENT_TOOL_NAMES
+    cfg = Config(active="a", providers={"a": ProviderConfig("anthropic", "m", "k")})
+    agent = build_agent(cfg, Scope([]), confirm=lambda p: True, session_dir=tmp_path)
+    assert "record_finding" in agent.tools
+    assert set(agent.tools) == set(AGENT_TOOL_NAMES)
 
 def test_main_classic_flag_dispatches_to_classic(monkeypatch):
     import pentai.cli as cli

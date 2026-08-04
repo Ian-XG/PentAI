@@ -4,6 +4,7 @@ meta.json describing it (provider, model, scope snapshot, turn count, title).
 This is what lets PentAI close and reopen on the same engagement, list past
 engagements, and resume any of them - the memory of a long op."""
 import json
+import os
 import time
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
@@ -63,7 +64,16 @@ class Session:
 
     def _write_meta(self) -> None:
         self.dir.mkdir(parents=True, exist_ok=True)
-        (self.dir / "meta.json").write_text(json.dumps(asdict(self.meta), indent=1))
+        try:
+            os.chmod(self.dir, 0o700)   # engagement data stays owner-only
+        except OSError:
+            pass
+        meta_path = self.dir / "meta.json"
+        meta_path.write_text(json.dumps(asdict(self.meta), indent=1))
+        try:
+            os.chmod(meta_path, 0o600)
+        except OSError:
+            pass
 
 def _sessions_root(base: Path) -> Path:
     return base / "sessions"

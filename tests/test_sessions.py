@@ -65,6 +65,14 @@ def test_derive_title_truncates_long_and_strips_newlines():
     t = derive_title([Message("user", "line one\nline two " + "x" * 80)])
     assert "\n" not in t and len(t) <= 60
 
+def test_session_files_are_private(tmp_path: Path):
+    import os
+    s = new_session(tmp_path, now=lambda: "20260804_101500")
+    s.save_history([Message("user", "secret creds: admin:hunter2")])
+    assert (os.stat(s.dir).st_mode & 0o777) == 0o700          # dir not group/other readable
+    assert (os.stat(s.dir / "meta.json").st_mode & 0o777) == 0o600
+    assert (os.stat(s.transcript_path).st_mode & 0o777) == 0o600
+
 def test_turns_counts_only_user_messages(tmp_path: Path):
     s = new_session(tmp_path, now=lambda: "20260804_101500")
     history = [Message("user", "a"), Message("assistant", "b"),
