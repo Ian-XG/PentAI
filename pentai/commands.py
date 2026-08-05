@@ -1,13 +1,14 @@
 from .scope import Scope
 
 _HELP = ("commands: /scope add <target>, /scope list, /settings, /setup, /model [name], "
-         "/mode [ask|auto|bypass], /sessions, /resume [id], /clear, /notes, /hosts, "
-         "/intel, /findings, /report, /tools, /playbooks [name], /help, /quit")
+         "/models, /mode [ask|auto|bypass], /sessions, /resume [id], /clear, /notes, "
+         "/hosts, /intel, /findings, /report, /tools, /playbooks [name], /help, /quit")
 
 SLASH_COMMANDS = [
     ("/scope", "add or list authorized targets"),
     ("/mode", "switch permission mode (ask / auto / bypass)"),
     ("/model", "switch model for the active provider, or /model to list"),
+    ("/models", "recommended low-refusal models for ethical-hacking work"),
     ("/settings", "change AI provider, key, and settings"),
     ("/sessions", "list past engagements you can resume"),
     ("/resume", "resume a past engagement: /resume <id> (or /resume for the latest)"),
@@ -43,7 +44,7 @@ def handle_slash(command: str, args: list[str], *, scope: Scope) -> str:
     if command in ("setup", "settings"):
         return "__setup__"
     if command in ("clear", "notes", "report", "tools", "playbooks", "model",
-                   "sessions", "resume", "findings", "hosts", "intel"):
+                   "models", "sessions", "resume", "findings", "hosts", "intel"):
         return "__" + command + "__"
     if command == "help":
         return _HELP

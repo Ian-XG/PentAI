@@ -36,6 +36,7 @@ from .tools.playbooks import load_playbook, LOAD_PLAYBOOK_TOOL, list_playbooks
 from .findings import load_findings, render_report, summarize_findings
 from .assets import load_assets, summarize_assets, render_assets
 from .intel import intel_leads, service_intel
+from .model_advice import over_refusal_tip, recommended_text, is_over_refuser
 from .commands import parse_slash, handle_slash
 from .permissions import MODES, next_mode
 from .toolcheck import check_tools
@@ -248,7 +249,8 @@ def model_command(provider, args: list[str], *, list_models_fn=list_models,
         else:
             provider.model = name
         persist(name)
-        return f"[ model: {name} ]"
+        tip = over_refusal_tip(name)
+        return f"[ model: {name} ]" + (f"\n{tip}" if tip else "")
     base = getattr(provider, "base_url", None)
     if not base:
         return f"current model: {provider.model}\nswitch with /model <name>"
@@ -257,7 +259,13 @@ def model_command(provider, args: list[str], *, list_models_fn=list_models,
     except Exception as e:
         return f"current model: {provider.model}\n(couldn't list models: {e})"
     listing = ", ".join(models) if models else "(none found)"
-    return f"current model: {provider.model}\navailable: {listing}\nswitch with /model <name>"
+    out = f"current model: {provider.model}\navailable: {listing}\nswitch with /model <name>"
+    tip = over_refusal_tip(provider.model)
+    if tip:
+        out += f"\n{tip}"
+    else:
+        out += "\n(see /models for models tuned for ethical-hacking work)"
+    return out
 
 def apply_mode_command(current: str, args: list[str]) -> str:
     if not args:
@@ -323,6 +331,9 @@ def main_classic(argv: list[str] | None = None) -> int:
     if history:
         console.print(f"[ resumed session {session_id} - {len(history)} messages restored ]",
                       style=palette["accent"], markup=False)
+    _startup_tip = over_refusal_tip(cfg.providers[cfg.active].model)
+    if _startup_tip:
+        console.print(f"[!] {_startup_tip}", style=palette["alert"], markup=False)
     _tool_results = check_tools()
     render_toolcheck(console, palette, _tool_results)
     installed_tools = [name for name, ok in _tool_results if ok]
@@ -399,6 +410,9 @@ def main_classic(argv: list[str] | None = None) -> int:
             if result == "__model__":
                 console.print(model_command(agent.provider, slash[1]),
                               style=palette["accent"], markup=False)
+                continue
+            if result == "__models__":
+                console.print(recommended_text(), style=palette["accent"], markup=False)
                 continue
             if result == "__sessions__":
                 console.print(format_sessions(_PENTAI_HOME), style=palette["dim"], markup=False)
@@ -645,6 +659,10 @@ def main_tui(argv: list[str]) -> int:
         output.append(Text(
             f"[ resumed session {session_id} - {len(restored)} messages restored ]",
             style=palette["accent"]), theme=markdown_theme(palette))
+    _startup_tip = over_refusal_tip(cfg.providers[cfg.active].model)
+    if _startup_tip:
+        output.append(Text(f"[!] {_startup_tip}", style=palette["alert"]),
+                      theme=markdown_theme(palette))
 
     mode_ref = {"mode": "bypass"}
     cmds_ref = {"n": 0}
@@ -810,6 +828,11 @@ def main_tui(argv: list[str]) -> int:
                 return
             if result == "__model__":
                 output.append(Text(model_command(agent.provider, args), style=palette["accent"]),
+                    theme=markdown_theme(palette))
+                app.invalidate()
+                return
+            if result == "__models__":
+                output.append(Text(recommended_text(), style=palette["accent"]),
                     theme=markdown_theme(palette))
                 app.invalidate()
                 return

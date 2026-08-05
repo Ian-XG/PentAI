@@ -29,6 +29,22 @@ def test_model_command_handles_list_failure_gracefully():
     out = model_command(prov, [], list_models_fn=boom)
     assert "current model: m" in out and "couldn't list" in out
 
+def test_model_command_warns_when_switching_to_over_refuser():
+    prov = OpenAICompatProvider("http://localhost:11434/v1", None, "hermes3")
+    out = model_command(prov, ["gpt-oss:120b"], persist=lambda m: None)
+    assert "gpt-oss:120b" in out
+    assert "/model" in out and "refuse" in out.lower()   # steered to a better model
+
+def test_model_command_no_warning_for_good_model():
+    prov = OpenAICompatProvider("http://localhost:11434/v1", None, "x")
+    out = model_command(prov, ["hermes3"], persist=lambda m: None)
+    assert out.strip() == "[ model: hermes3 ]"           # clean, no tip
+
+def test_model_command_list_points_to_models_command():
+    prov = OpenAICompatProvider("http://localhost:11434/v1", None, "hermes3")
+    out = model_command(prov, [], list_models_fn=lambda base, key: ["hermes3"])
+    assert "/models" in out
+
 def test_model_command_anthropic_has_no_list():
     prov = AnthropicProvider("k", "claude-opus-4")
     out = model_command(prov, [], persist=lambda m: None)
