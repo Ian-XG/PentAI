@@ -47,11 +47,14 @@ def build_config(choice: ProviderChoice, *, model: str, api_key: str | None = No
             "providers": {choice.name: pc}}
 
 def prompt_provider_details(choice: ProviderChoice, prompt_fn: Callable[[str], str],
-                            secret_fn: Callable[[str], str] | None = None) -> dict:
+                            secret_fn: Callable[[str], str] | None = None,
+                            existing_key: str | None = None) -> dict:
     """Given an already-chosen provider, ask the remaining questions (base URL if
     needed, model with default, masked API key if needed) and build its config.
     Shared by the classic numbered run_wizard() and the interactive select() path
-    in cli.py so both end the same way."""
+    in cli.py so both end the same way. When the provider already has a saved key
+    (existing_key), pressing enter at the key prompt keeps it - so changing just
+    the model never forces you to re-paste your API key."""
     base_url = None
     if choice.needs_base_url:
         base_url = prompt_fn("Base URL (OpenAI-compatible): ").strip() or None
@@ -59,12 +62,15 @@ def prompt_provider_details(choice: ProviderChoice, prompt_fn: Callable[[str], s
     api_key = None
     if choice.needs_key:
         ask_key = secret_fn or prompt_fn
-        api_key = ask_key(f"Paste your {choice.api_key_env}: ").strip() or None
+        label = f"Paste your {choice.api_key_env}"
+        label += " [enter to keep current]: " if existing_key else ": "
+        api_key = ask_key(label).strip() or existing_key or None
     return build_config(choice, model=model, api_key=api_key, base_url=base_url)
 
 def run_wizard(prompt_fn: Callable[[str], str], print_fn: Callable[[str], None],
                secret_fn: Callable[[str], str] | None = None, *,
-               render_menu: Callable[[], None] | None = None) -> dict:
+               render_menu: Callable[[], None] | None = None,
+               existing_config: dict | None = None) -> dict:
     """Run the interactive provider wizard. `render_menu`, if given, replaces the
     default plain numbered-list printout (e.g. with a polished rich panel/table) -
     the selection/prompt logic below is unchanged either way, so it stays testable
@@ -82,7 +88,10 @@ def run_wizard(prompt_fn: Callable[[str], str], print_fn: Callable[[str], None],
             choice = PROVIDER_CHOICES[int(raw) - 1]
         else:
             print_fn(f"Enter a number 1-{len(PROVIDER_CHOICES)}.")
-    return prompt_provider_details(choice, prompt_fn, secret_fn)
+    existing_key = None
+    if existing_config:
+        existing_key = (existing_config.get("providers", {}).get(choice.name) or {}).get("api_key")
+    return prompt_provider_details(choice, prompt_fn, secret_fn, existing_key=existing_key)
 
 def merge_provider(base: dict | None, new: dict) -> dict:
     """Merge a single-provider wizard config `new` into an existing config `base`,

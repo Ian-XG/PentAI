@@ -392,7 +392,8 @@ def main_classic(argv: list[str] | None = None) -> int:
                     wiz = run_wizard(lambda p: console.input(p, markup=False),
                                      lambda m: console.print(m, style=palette["accent"]),
                                      secret_fn=lambda p: console.input(p, markup=False, password=True),
-                                     render_menu=lambda: render_provider_menu(console, palette, cfg.active))
+                                     render_menu=lambda: render_provider_menu(console, palette, cfg.active),
+                                     existing_config=read_config_file())
                 except (KeyboardInterrupt, EOFError):
                     console.print("\ncancelled, no changes saved", style=palette["dim"])
                     continue
@@ -560,7 +561,8 @@ def run_settings(prompt_fn: Callable[[str], str], print_fn: Callable[[str], None
             print_fn(f"current provider: {active}:{pc.get('model', '?')}")
         else:
             print_fn("no provider configured yet - let's set one up")
-    wiz = run_wizard(prompt_fn, print_fn, secret_fn, render_menu=render_menu)
+    wiz = run_wizard(prompt_fn, print_fn, secret_fn, render_menu=render_menu,
+                     existing_config=current)
     return merge_provider(current, wiz)
 
 def _provider_row(c: ProviderChoice, current_active: str | None) -> str:
@@ -588,10 +590,13 @@ def main_settings(argv: list[str] | None = None) -> int:
             if idx is None:
                 console.print("cancelled, no changes saved", style=palette["dim"])
                 return 0
+            chosen = PROVIDER_CHOICES[idx]
+            existing_key = ((current or {}).get("providers", {}).get(chosen.name) or {}).get("api_key")
             wiz = prompt_provider_details(
-                PROVIDER_CHOICES[idx],
+                chosen,
                 lambda p: console.input(p, markup=False),
-                secret_fn=lambda p: console.input(p, markup=False, password=True))
+                secret_fn=lambda p: console.input(p, markup=False, password=True),
+                existing_key=existing_key)
             merged = merge_provider(current, wiz)
         else:
             # non-tty (tests, pipes, non-interactive shells): fall back to the

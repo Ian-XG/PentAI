@@ -16,6 +16,37 @@ def test_set_active_model_updates_active_provider(tmp_path: Path):
 def test_set_active_model_noop_without_config(tmp_path: Path):
     assert set_active_model("x", path=tmp_path / "missing.yaml") is None
 
+def test_prompt_details_keeps_existing_key_on_empty():
+    from pentai.onboarding import prompt_provider_details, PROVIDER_CHOICES
+    cloud = next(c for c in PROVIDER_CHOICES if c.name == "ollama-cloud")
+    prompts = iter([""])            # accept default model
+    secrets = []
+    cfg = prompt_provider_details(
+        cloud, lambda p: next(prompts),
+        secret_fn=lambda p: secrets.append(p) or "",   # user presses enter at key
+        existing_key="sk-existing")
+    assert cfg["providers"]["ollama-cloud"]["api_key"] == "sk-existing"
+    assert "keep current" in secrets[0]                # prompt told them enter keeps it
+
+def test_prompt_details_replaces_key_when_new_one_typed():
+    from pentai.onboarding import prompt_provider_details, PROVIDER_CHOICES
+    cloud = next(c for c in PROVIDER_CHOICES if c.name == "ollama-cloud")
+    prompts = iter([""])
+    cfg = prompt_provider_details(
+        cloud, lambda p: next(prompts),
+        secret_fn=lambda p: "sk-new",                  # user types a new key
+        existing_key="sk-existing")
+    assert cfg["providers"]["ollama-cloud"]["api_key"] == "sk-new"
+
+def test_run_wizard_keeps_existing_key_from_config():
+    from pentai.onboarding import run_wizard
+    existing = {"active": "ollama-cloud",
+                "providers": {"ollama-cloud": {"kind": "openai_compat", "model": "old",
+                                               "api_key": "sk-keep"}}}
+    answers = iter(["4", "", ""])   # choose ollama-cloud, default model, empty key
+    cfg = run_wizard(lambda p: next(answers), lambda m: None, existing_config=existing)
+    assert cfg["providers"]["ollama-cloud"]["api_key"] == "sk-keep"
+
 def test_five_choices_in_order():
     names = [c.name for c in PROVIDER_CHOICES]
     assert names == ["anthropic", "openai", "ollama", "ollama-cloud", "custom"]
