@@ -238,33 +238,52 @@ def format_sessions(base: Path) -> str:
         lines.append(f"  {m.id}  {m.turns:>3} turns  {prov:<24} {title}")
     return "\n".join(lines)
 
+def _switch_model(provider, name: str, persist) -> str:
+    if hasattr(provider, "set_model"):
+        provider.set_model(name)
+    else:
+        provider.model = name
+    persist(name)
+    tip = over_refusal_tip(name)
+    return f"[ model: {name} ]" + (f"\n{tip}" if tip else "")
+
 def model_command(provider, args: list[str], *, list_models_fn=list_models,
                   persist=set_active_model) -> str:
-    """Switch the active provider's model in place (/model <name>), or list what's
-    available (/model). The switch is live for this session and persisted to config."""
-    if args:
-        name = args[0]
-        if hasattr(provider, "set_model"):
-            provider.set_model(name)
-        else:
-            provider.model = name
-        persist(name)
-        tip = over_refusal_tip(name)
-        return f"[ model: {name} ]" + (f"\n{tip}" if tip else "")
+    """Switch the active provider's model in place, or list what's available.
+    /model            -> numbered list of the provider's models
+    /model <number>   -> pick that model from the list (no typing a long name)
+    /model <name>     -> switch to a model by name
+    The switch is live for this session and persisted to config."""
     base = getattr(provider, "base_url", None)
+    if args:
+        target = args[0]
+        if target.isdigit():
+            # numeric pick against the live list - the frictionless path
+            if not base:
+                return (f"current model: {provider.model}\n"
+                        "numeric pick needs a listable provider; use /model <name>")
+            try:
+                models = list_models_fn(base, getattr(provider, "api_key", None))
+            except Exception as e:
+                return f"couldn't list models: {e}\nswitch by name with /model <name>"
+            i = int(target)
+            if not models or not (1 <= i <= len(models)):
+                return f"no model #{i} (there are {len(models)}). run /model to see the list."
+            return _switch_model(provider, models[i - 1], persist)
+        return _switch_model(provider, target, persist)
     if not base:
         return f"current model: {provider.model}\nswitch with /model <name>"
     try:
         models = list_models_fn(base, getattr(provider, "api_key", None))
     except Exception as e:
         return f"current model: {provider.model}\n(couldn't list models: {e})"
-    listing = ", ".join(models) if models else "(none found)"
-    out = f"current model: {provider.model}\navailable: {listing}\nswitch with /model <name>"
+    if not models:
+        return f"current model: {provider.model}\n(no models found)\nswitch with /model <name>"
+    numbered = "\n".join(f"  {i}) {m}" for i, m in enumerate(models, 1))
+    out = (f"current model: {provider.model}\navailable:\n{numbered}\n"
+           "switch with /model <number> or /model <name>")
     tip = over_refusal_tip(provider.model)
-    if tip:
-        out += f"\n{tip}"
-    else:
-        out += "\n(see /models for models tuned for ethical-hacking work)"
+    out += f"\n{tip}" if tip else "\n(see /models for models tuned for ethical-hacking work)"
     return out
 
 def apply_mode_command(current: str, args: list[str]) -> str:
@@ -826,8 +845,10 @@ def main_tui(argv: list[str]) -> int:
             if result == "__setup__":
                 # The interactive wizard uses blocking console.input() calls that
                 # would deadlock the full-screen event loop, so it's not run here.
+                # Switching MODELS, though, needs no wizard - point there first.
                 output.append(Text(
-                    "to change your AI provider, quit (/quit) and run:  pentai --settings",
+                    "to switch models: /model (lists them) then /model <number> - no re-entering your key.\n"
+                    "to change provider or API key: quit (/quit) and run  pentai --settings",
                     style=palette["accent"]), theme=markdown_theme(palette))
                 app.invalidate()
                 return

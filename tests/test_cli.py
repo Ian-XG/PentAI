@@ -29,6 +29,31 @@ def test_model_command_handles_list_failure_gracefully():
     out = model_command(prov, [], list_models_fn=boom)
     assert "current model: m" in out and "couldn't list" in out
 
+def test_model_command_numbered_listing():
+    prov = OpenAICompatProvider("http://localhost:11434/v1", None, "hermes3")
+    out = model_command(prov, [], list_models_fn=lambda base, key: ["hermes3", "dolphin3", "gpt-oss:20b"])
+    assert "1) hermes3" in out and "2) dolphin3" in out and "3) gpt-oss:20b" in out
+    assert "/model <number>" in out
+
+def test_model_command_picks_by_number():
+    prov = OpenAICompatProvider("http://localhost:11434/v1", None, "hermes3")
+    saved = {}
+    out = model_command(prov, ["2"], list_models_fn=lambda base, key: ["hermes3", "dolphin3"],
+                        persist=lambda m: saved.setdefault("m", m))
+    assert prov.model == "dolphin3"       # #2 selected without typing the name
+    assert saved["m"] == "dolphin3"
+    assert "dolphin3" in out
+
+def test_model_command_number_out_of_range():
+    prov = OpenAICompatProvider("http://localhost:11434/v1", None, "hermes3")
+    out = model_command(prov, ["9"], list_models_fn=lambda base, key: ["hermes3", "dolphin3"])
+    assert "no model #9" in out and prov.model == "hermes3"   # unchanged
+
+def test_model_command_number_without_listable_provider():
+    prov = AnthropicProvider("k", "claude-opus-4")
+    out = model_command(prov, ["2"], persist=lambda m: None)
+    assert "use /model <name>" in out and prov.model == "claude-opus-4"
+
 def test_model_command_warns_when_switching_to_over_refuser():
     prov = OpenAICompatProvider("http://localhost:11434/v1", None, "hermes3")
     out = model_command(prov, ["gpt-oss:120b"], persist=lambda m: None)
