@@ -22,18 +22,16 @@ pip install -e ".[dev]"
 pentai
 ```
 
-This prints the boot banner, then drops you into a prompt:
+If no provider is configured yet (no `~/.pentai/config.yaml` and no API key in the environment), PentAI walks you through a short interactive setup wizard on first launch - pick a provider, paste a key, done.
 
-```
-root@pentai:~#
-```
-
-Type natural language and the agent will plan and (with your confirmation) run shell commands. Type `/help` to see available commands, `/quit` to exit.
-
-Use `--no-fx` to skip the boot animation and print a plain banner (useful for scripts, low-color terminals, or piping input):
+This drops you into a full-screen terminal UI: a scrolling output pane, an input line, and a status bar (`mode:BYPASS  scope:0  cmds:0  ...`). Type natural language and the agent will plan and (with your confirmation) run shell commands. Type `/help` to see available commands, `shift+tab` to cycle permission mode, `esc` to stop a running turn, `/quit` to exit.
 
 ```bash
-pentai --no-fx
+pentai --classic     # plain scrolling REPL (root@pentai:~# prompt) instead of the full-screen UI
+pentai --classic --no-fx   # classic mode without the boot animation
+pentai --settings    # re-run the provider/model/key setup wizard
+pentai -c            # resume the most recent engagement
+pentai --resume <id> # resume a specific engagement (see /sessions for ids)
 ```
 
 ## Provider setup
@@ -49,7 +47,9 @@ export OPENAI_API_KEY=sk-...
 pentai
 ```
 
-On startup, PentAI reads `~/.pentai/config.yaml` if it exists. If the file is missing (or empty), it falls back to built-in defaults: an `anthropic` provider (`claude-opus-4`) and an `openai` provider (`gpt-4o` against the official OpenAI API), each reading its matching API key from the environment automatically.
+On startup, PentAI reads `~/.pentai/config.yaml` if it exists. If the file is missing (or empty) and no key is set in the environment, it launches the setup wizard; otherwise it falls back to built-in defaults: an `anthropic` provider (`claude-opus-4`) and an `openai` provider (`gpt-4o` against the official OpenAI API), each reading its matching API key from the environment automatically.
+
+Some models over-refuse legitimate offensive-security requests. Run `/models` inside PentAI for a short list of low-refusal models known to work well for pentesting/CTF work, and `/model` to see the active provider's available models and switch with `/model <number>` (no need to type the full model name, no re-entering your key).
 
 To use another provider (Ollama, Groq, OpenRouter, or any other OpenAI-compatible backend), copy `pentai/config.example.yaml` to `~/.pentai/config.yaml` and edit it. `config.example.yaml` documents the full config schema used by `pentai.config.load_config` / `Config` / `ProviderConfig`, including how to point at other OpenAI-compatible backends such as Ollama or Groq and how to override which environment variable a provider reads its key from with the per-provider `api_key_env` field:
 
@@ -77,8 +77,21 @@ Each provider entry sets `kind` (`anthropic` or `openai_compat`), `model`, an op
 
 ## Slash commands
 
-- `/scope add <target>` - add a host, IP, CIDR, or glob pattern to the authorized-scope list
-- `/scope list` - show the current scope list
+- `/scope add <target>` / `/scope list` - add to or show the authorized-scope list
+- `/mode [ask|auto|bypass]` - switch permission mode (also: `shift+tab` to cycle)
+- `/model [number|name]` - list the active provider's models, or switch to one
+- `/models` - recommended low-refusal models for ethical-hacking work
+- `/settings` / `/setup` - change AI provider, key, and settings
+- `/sessions` - list past engagements you can resume
+- `/resume [id]` - resume a past engagement (latest if no id given)
+- `/clear` - clear the screen
+- `/notes` - show session notes
+- `/hosts` - show the mapped attack surface (hosts, ports, services)
+- `/intel` - suggest next moves and known vulns for mapped services
+- `/findings` - list structured findings recorded this engagement
+- `/report` - render the engagement report and save it to the session
+- `/tools` - list agent tools and installed CLI tools
+- `/playbooks [name]` - list playbooks, or show one
 - `/help` - list available commands
 - `/quit` - exit PentAI
 
