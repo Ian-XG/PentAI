@@ -1,6 +1,12 @@
 # PentAI
 
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](pyproject.toml)
+[![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](#contributing)
+
 A terminal AI agent that helps you learn ethical hacking by planning and running commands with you, one confirmed step at a time.
+
+![PentAI boot screen and a sample turn](docs/img/screenshot.svg)
 
 ## Ethical use
 
@@ -11,8 +17,8 @@ PentAI is built for authorized security testing and hands-on learning only: use 
 Requires Python 3.11+.
 
 ```bash
-git clone <this-repo>
-cd pentai
+git clone https://github.com/Ian-XG/PentAI.git
+cd PentAI
 pip install -e ".[dev]"
 ```
 
@@ -106,6 +112,19 @@ PentAI ships four methodology playbooks in `pentai/skills/` that the agent can l
 - `priv-esc.md`
 - `reporting.md`
 
+## Contributing
+
+PentAI is open source and contributions are welcome - bug reports, playbooks, provider support, whatever.
+
+```bash
+git clone https://github.com/Ian-XG/PentAI.git
+cd PentAI
+pip install -e ".[dev]"
+pytest
+```
+
+Open an issue before a large change so we can agree on the approach first; small fixes and new playbooks can go straight to a PR.
+
 ## License
 
-MIT - see [LICENSE](LICENSE).
+MIT - see [LICENSE](LICENSE). Free to use, modify, and redistribute, including commercially; you're on your own for warranty and liability (see the license text for the exact terms).
