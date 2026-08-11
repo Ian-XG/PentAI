@@ -1,18 +1,25 @@
 from pathlib import Path
 from ..providers.base import Tool
-from ..findings import add_finding, SEVERITIES
+from ..findings import add_finding, is_known_severity, SEVERITIES
 
 def record_finding(args: dict, *, session_dir: Path) -> str:
     title = (args.get("title") or "").strip()
     if not title:
         return "[record_finding needs a title]"
+    given_sev = args.get("severity", "info")
     f = add_finding(session_dir, title=title,
-                    severity=args.get("severity", "info"),
+                    severity=given_sev,
                     target=args.get("target", ""),
                     description=args.get("description", ""),
                     evidence=args.get("evidence", ""),
                     remediation=args.get("remediation", ""))
-    return f"[recorded {f.id} [{f.severity.upper()}] {f.title}]"
+    msg = f"[recorded {f.id} [{f.severity.upper()}] {f.title}]"
+    if not is_known_severity(given_sev):
+        # Don't let a mistyped severity silently bury a serious finding at info -
+        # tell the model so it can re-record with a valid level.
+        msg += (f" [note: severity {given_sev!r} not recognized, defaulted to "
+                f"{f.severity}; use one of {'/'.join(SEVERITIES)}]")
+    return msg
 
 RECORD_FINDING_TOOL = Tool(
     name="record_finding",

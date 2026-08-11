@@ -69,3 +69,30 @@ def test_agent_stops_at_max_iterations():
     agent = Agent(prov, "sys", {"run_command": spec})
     list(agent.send("scan"))
     assert prov.calls <= 25
+
+def test_tool_exception_becomes_result_and_turn_continues():
+    def boom(args):
+        raise ValueError("nmap blew up")
+    tool = Tool("run_command", "run", {"type": "object"})
+    spec = ToolSpec(tool, boom)
+    prov = ScriptedProvider([
+        [ToolCallEvent("t1", "run_command", {"command": "nmap x"}), Done("tool_use")],
+        [TextDelta("recovered"), Done("end")],
+    ])
+    agent = Agent(prov, "sys", {"run_command": spec})
+    out = list(agent.send("scan"))                       # must NOT raise
+    inv = next(e for e in out if isinstance(e, ToolInvocation))
+    assert "tool error" in inv.result.lower()
+    assert "ValueError" in inv.result and "nmap blew up" in inv.result
+    # the model got the error as a tool result and finished the turn
+    assert any(isinstance(e, TextDelta) and e.text == "recovered" for e in out)
+
+def test_unknown_tool_is_reported_not_crashed():
+    prov = ScriptedProvider([
+        [ToolCallEvent("t1", "does_not_exist", {}), Done("tool_use")],
+        [TextDelta("ok"), Done("end")],
+    ])
+    agent = Agent(prov, "sys", {})
+    out = list(agent.send("go"))
+    inv = next(e for e in out if isinstance(e, ToolInvocation))
+    assert "unknown tool" in inv.result.lower()

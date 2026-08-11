@@ -140,9 +140,12 @@ def build_agent(cfg: Config, scope: Scope, confirm: Callable[[str], bool],
                 history: list[Message] | None = None) -> Agent:
     provider = build_provider(cfg)
 
+    timeout = cfg.command_timeout if cfg.command_timeout and cfg.command_timeout > 0 else None
+
     def _run(args: dict) -> str:
         cmd = args.get("command", "")
-        out = run_command(cmd, scope=scope, confirm=confirm, mode=mode_getter())
+        out = run_command(cmd, scope=scope, confirm=confirm, mode=mode_getter(),
+                          timeout=timeout)
         if is_nmap_command(cmd):
             n = ingest_nmap(session_dir, out)
             if n:

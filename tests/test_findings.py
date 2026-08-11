@@ -41,6 +41,28 @@ def test_load_findings_corrupt_returns_empty(tmp_path: Path):
     (tmp_path / "findings.json").write_text("{bad")
     assert load_findings(tmp_path) == []
 
+def test_load_findings_tolerates_unknown_keys(tmp_path: Path):
+    # a newer/hand-edited schema with an extra field must not brick the session
+    # (load_findings runs on every turn via the live context)
+    import json
+    (tmp_path / "findings.json").write_text(
+        json.dumps([{"title": "SQLi", "severity": "high", "cvss": 9.1, "extra": "x"}]))
+    loaded = load_findings(tmp_path)
+    assert len(loaded) == 1 and loaded[0].title == "SQLi" and loaded[0].severity == "high"
+
+def test_load_findings_skips_untitled_and_non_dict_records(tmp_path: Path):
+    import json
+    (tmp_path / "findings.json").write_text(
+        json.dumps([{"severity": "high"}, "garbage", {"title": "real", "severity": "low"}]))
+    loaded = load_findings(tmp_path)
+    assert [f.title for f in loaded] == ["real"]
+
+def test_load_findings_renormalizes_stored_severity(tmp_path: Path):
+    import json
+    (tmp_path / "findings.json").write_text(
+        json.dumps([{"title": "x", "severity": "BOGUS"}]))
+    assert load_findings(tmp_path)[0].severity == "info"
+
 def test_render_report_has_summary_table_and_sorted_findings():
     findings = [
         Finding(title="Info leak", severity="info", id="F-002"),

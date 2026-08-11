@@ -5,7 +5,7 @@ professional engagement report. Stored per-session in findings.json, written
 0600 - findings carry credentials and evidence and never leave the machine."""
 import json
 import os
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field, asdict, fields
 from pathlib import Path
 
 # worst-first: index doubles as the sort/severity rank
@@ -38,6 +38,15 @@ def normalize_severity(sev) -> str:
         return s
     return _SYNONYMS.get(s, "info")
 
+def is_known_severity(sev) -> bool:
+    """True if `sev` maps to a real severity level (directly or via a synonym).
+    Lets callers tell an intended 'info' from an unrecognized value that
+    normalize_severity would silently bucket into 'info'."""
+    if not sev:
+        return False
+    s = str(sev).strip().lower()
+    return s in SEVERITIES or s in _SYNONYMS
+
 def severity_rank(sev: str) -> int:
     s = normalize_severity(sev)
     return SEVERITIES.index(s)
@@ -49,6 +58,20 @@ def _now() -> str:
     import time
     return time.strftime("%Y%m%d_%H%M%S")
 
+_FINDING_FIELDS = {f.name for f in fields(Finding)}
+
+def _finding_from_dict(d: dict) -> Finding | None:
+    """Build a Finding from a stored dict, tolerating extra keys (a newer or
+    hand-edited schema) and missing optional ones. Returns None if there isn't
+    even a title to salvage. load_findings runs every turn, so a single stale
+    record must never crash the whole session."""
+    if not isinstance(d, dict) or not d.get("title"):
+        return None
+    known = {k: v for k, v in d.items() if k in _FINDING_FIELDS}
+    f = Finding(**known)
+    f.severity = normalize_severity(f.severity)
+    return f
+
 def load_findings(session_dir: Path) -> list[Finding]:
     try:
         data = json.loads(_findings_path(session_dir).read_text())
@@ -56,7 +79,8 @@ def load_findings(session_dir: Path) -> list[Finding]:
         return []
     if not isinstance(data, list):
         return []
-    return [Finding(**d) for d in data]
+    out = [_finding_from_dict(d) for d in data]
+    return [f for f in out if f is not None]
 
 def _save_findings(session_dir: Path, findings: list[Finding]) -> None:
     session_dir.mkdir(parents=True, exist_ok=True)

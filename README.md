@@ -65,6 +65,7 @@ active: anthropic
 palette: green
 fx: true
 scope: []
+command_timeout: 900   # seconds before a shell command is killed (0 disables)
 providers:
   anthropic:
     kind: anthropic

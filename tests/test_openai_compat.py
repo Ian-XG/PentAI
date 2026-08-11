@@ -76,6 +76,41 @@ def test_chat_assembles_multichunk_tool_call():
     assert tcs[0].arguments == {"command": "ls"}
     assert any(isinstance(e, Done) and e.stop_reason == "tool_use" for e in events)
 
+def test_chat_skips_tool_call_without_name():
+    # a stray tool_call delta that never carries a function name is unusable
+    lines = [
+        'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"arguments":"{}"}}]}}]}',
+        'data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}',
+        'data: [DONE]',
+    ]
+    prov = OpenAICompatProvider("http://x/v1", "k", "gpt-4o",
+                                poster=lambda url, headers, json: iter(lines))
+    events = list(prov.chat([Message("user", "scan")], []))
+    assert [e for e in events if isinstance(e, ToolCallEvent)] == []
+    assert any(isinstance(e, Done) and e.stop_reason == "tool_use" for e in events)
+
+def test_chat_tool_call_with_bad_json_args_falls_back_to_empty():
+    lines = [
+        'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","function":{"name":"load_playbook","arguments":"{not json"}}]}}]}',
+        'data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}',
+        'data: [DONE]',
+    ]
+    prov = OpenAICompatProvider("http://x/v1", "k", "gpt-4o",
+                                poster=lambda url, headers, json: iter(lines))
+    tcs = [e for e in prov.chat([Message("user", "go")], []) if isinstance(e, ToolCallEvent)]
+    assert len(tcs) == 1 and tcs[0].name == "load_playbook" and tcs[0].arguments == {}
+
+def test_chat_synthesizes_id_when_missing():
+    lines = [
+        'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"name":"run_command","arguments":"{}"}}]}}]}',
+        'data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}',
+        'data: [DONE]',
+    ]
+    prov = OpenAICompatProvider("http://x/v1", "k", "gpt-4o",
+                                poster=lambda url, headers, json: iter(lines))
+    tcs = [e for e in prov.chat([Message("user", "go")], []) if isinstance(e, ToolCallEvent)]
+    assert len(tcs) == 1 and tcs[0].id      # non-empty synthesized id
+
 def test_chat_retries_without_tools_on_400():
     # a local model that rejects the `tools` param (Ollama returns 400); we should
     # transparently retry as a plain chat so the model still works.

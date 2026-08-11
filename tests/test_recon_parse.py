@@ -67,6 +67,16 @@ def test_parse_udp_and_open_filtered():
     assert h.services[0].state == "open|filtered"
     assert h.services[0].port == 53
 
+def test_parse_combined_and_unfiltered_states_not_dropped():
+    # closed|filtered and unfiltered are real nmap states; earlier the regex
+    # only knew open|filtered and silently dropped these port lines.
+    text = ("Nmap scan report for 10.0.0.9\n"
+            "PORT     STATE           SERVICE\n"
+            "137/udp  closed|filtered netbios-ns\n"
+            "445/tcp  unfiltered      microsoft-ds\n")
+    states = {s.port: s.state for s in parse_nmap(text)[0].services}
+    assert states == {137: "closed|filtered", 445: "unfiltered"}
+
 def test_parse_multiword_product_keeps_version():
     text = ("Nmap scan report for 10.0.0.5\n"
             "PORT     STATE SERVICE VERSION\n"
