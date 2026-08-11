@@ -1,6 +1,6 @@
 from pentai.scope import Scope
 from pentai.tools.shell import (run_command, CommandResult, RUN_COMMAND_TOOL,
-                                truncate_output, _subprocess_runner)
+                                truncate_output, _subprocess_runner, TIMEOUT_EXIT_CODE)
 from pentai.ui.toolfmt import format_command_output
 
 def _fixed_runner(out):
@@ -150,6 +150,28 @@ def test_subprocess_runner_captures_exit_and_stderr():
     assert r.exit_code == 3
     assert "out" in r.stdout
     assert "err" in r.stderr
+
+def test_subprocess_runner_kills_hung_command_on_timeout():
+    import time
+    start = time.time()
+    r = _subprocess_runner("echo starting; sleep 30", timeout=1)
+    assert time.time() - start < 10          # killed promptly, not after 30s
+    assert r.exit_code == TIMEOUT_EXIT_CODE
+    assert "starting" in r.stdout            # partial output before the deadline kept
+    assert "timed out" in r.stderr
+
+def test_subprocess_runner_no_timeout_by_default():
+    r = _subprocess_runner("echo ok")        # timeout=None -> runs to completion
+    assert r.exit_code == 0 and "ok" in r.stdout
+
+def test_run_command_passes_timeout_to_default_runner():
+    import time
+    start = time.time()
+    out = run_command("sleep 30", scope=Scope([]), confirm=lambda p: True,
+                      mode="bypass", timeout=1)
+    assert time.time() - start < 10
+    assert "timed out" in out
+    assert f"exit_code={TIMEOUT_EXIT_CODE}" in out
 
 def test_run_command_truncates_stdout_and_stderr_individually():
     big = "\n".join(f"l{i}" for i in range(500))

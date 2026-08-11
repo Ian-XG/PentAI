@@ -27,6 +27,17 @@ def test_api_key_env_field_overrides_by_name():
     cfg = load_config(data, env={"GROQ_API_KEY": "gsk-test"})
     assert cfg.providers["groq"].api_key == "gsk-test"
 
+def test_command_timeout_defaults_to_900():
+    assert default_config().command_timeout == 900
+    data = {"active": "anthropic",
+            "providers": {"anthropic": {"kind": "anthropic", "model": "claude-opus-4"}}}
+    assert load_config(data).command_timeout == 900
+
+def test_command_timeout_read_from_config():
+    data = {"active": "anthropic", "command_timeout": 60,
+            "providers": {"anthropic": {"kind": "anthropic", "model": "claude-opus-4"}}}
+    assert load_config(data).command_timeout == 60
+
 def test_load_config_file_reads_yaml(tmp_path):
     from pathlib import Path
     from pentai.config import load_config_file

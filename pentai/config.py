@@ -20,6 +20,8 @@ class Config:
     fx: bool = True
     palette: str = "green"
     scope: list[str] = field(default_factory=list)
+    command_timeout: int = 900   # seconds a shell command may run before it's
+                                 # killed; 0 (or negative) disables the timeout
 
 def default_config() -> Config:
     return Config(
@@ -41,7 +43,8 @@ def load_config(data: dict | None = None, env: dict[str, str] | None = None) -> 
         }
         cfg = Config(active=data["active"], providers=providers,
                      fx=data.get("fx", True), palette=data.get("palette", "green"),
-                     scope=list(data.get("scope", [])))
+                     scope=list(data.get("scope", [])),
+                     command_timeout=int(data.get("command_timeout", 900)))
     for name, pc in cfg.providers.items():
         key_env = pc.api_key_env or _ENV_KEYS.get(name)
         if pc.api_key is None and key_env and env.get(key_env):
