@@ -137,11 +137,20 @@ class OpenAICompatProvider:
             if finish == "tool_calls":
                 for i in sorted(tool_buffer):
                     buf = tool_buffer[i]
+                    if not buf["name"]:
+                        # A streamed tool call that never carried a function name
+                        # is unusable - skip it rather than emit a call the agent
+                        # can only reject as an unknown tool. Some local models
+                        # emit stray empty tool_call deltas.
+                        continue
                     try:
                         args = _json.loads(buf["arguments"] or "{}")
                     except _json.JSONDecodeError:
+                        # Malformed / partially-streamed JSON args: fall back to
+                        # empty args so the tool still fires with its defaults
+                        # instead of taking down the turn on a decode error.
                         args = {}
-                    yield ToolCallEvent(buf["id"], buf["name"], args)
+                    yield ToolCallEvent(buf["id"] or f"call_{i}", buf["name"], args)
                 tool_buffer = {}
                 yield Done("tool_use")
             elif finish:
