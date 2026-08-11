@@ -23,7 +23,14 @@ class ParsedHost:
 # "Nmap scan report for web01 (10.0.0.5)"  or  "Nmap scan report for 10.0.0.5"
 _REPORT = re.compile(r"^Nmap scan report for (?:(\S+) \(([^)]+)\)|(\S+))\s*$")
 # "22/tcp  open  ssh     OpenSSH 8.2p1 ..."
-_PORT = re.compile(r"^(\d+)/(tcp|udp)\s+(open\|filtered|open|filtered|closed)\s+(\S+)(?:\s+(.*))?$")
+# State covers all six nmap port states, including the combined ones nmap emits
+# for ambiguous results (open|filtered, closed|filtered) and unfiltered. The
+# combined forms must come first so the alternation matches them whole rather
+# than stopping at the leading "open"/"closed".
+_PORT = re.compile(
+    r"^(\d+)/(tcp|udp)\s+"
+    r"((?:open|closed)\|filtered|unfiltered|open|filtered|closed)"
+    r"\s+(\S+)(?:\s+(.*))?$")
 _OS_INFO = re.compile(r"Service Info:.*?OS:\s*([^;]+)")
 
 def is_nmap_command(command: str) -> bool:

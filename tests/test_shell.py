@@ -1,5 +1,6 @@
 from pentai.scope import Scope
-from pentai.tools.shell import run_command, CommandResult, RUN_COMMAND_TOOL, truncate_output
+from pentai.tools.shell import (run_command, CommandResult, RUN_COMMAND_TOOL,
+                                truncate_output, _subprocess_runner)
 from pentai.ui.toolfmt import format_command_output
 
 def _fixed_runner(out):
@@ -135,6 +136,20 @@ def test_truncated_envelope_preserves_nonzero_exit_code():
                          runner=lambda c: CommandResult(big_stdout, "", 2))
     formatted = format_command_output(result)
     assert "[exit code 2]" in formatted
+
+# --- _subprocess_runner robustness ------------------------------------
+
+def test_subprocess_runner_survives_binary_output():
+    # non-UTF-8 bytes on stdout must not raise UnicodeDecodeError
+    r = _subprocess_runner("head -c 32 /dev/urandom")
+    assert r.exit_code == 0
+    assert isinstance(r.stdout, str)          # decoded (with replacement), not crashed
+
+def test_subprocess_runner_captures_exit_and_stderr():
+    r = _subprocess_runner("echo out; echo err 1>&2; exit 3")
+    assert r.exit_code == 3
+    assert "out" in r.stdout
+    assert "err" in r.stderr
 
 def test_run_command_truncates_stdout_and_stderr_individually():
     big = "\n".join(f"l{i}" for i in range(500))

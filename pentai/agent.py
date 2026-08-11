@@ -53,6 +53,15 @@ class Agent:
                 return
             for call in pending:
                 spec = self.tools.get(call.name)
-                result = spec.run(call.arguments) if spec else f"[unknown tool: {call.name}]"
+                if spec is None:
+                    result = f"[unknown tool: {call.name}]"
+                else:
+                    try:
+                        result = spec.run(call.arguments)
+                    except Exception as exc:
+                        # A tool raising must not kill the turn (and with it the
+                        # TUI session). Hand the error back to the model as the
+                        # tool result so it can recover or try another approach.
+                        result = f"[tool error: {type(exc).__name__}: {exc}]"
                 self.history.append(Message("tool", result, tool_call_id=call.id))
                 yield ToolInvocation(call.name, call.arguments, result)

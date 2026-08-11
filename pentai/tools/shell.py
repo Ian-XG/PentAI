@@ -33,7 +33,12 @@ def truncate_output(text: str, *, max_lines: int = 200, head_lines: int = 140,
     return text
 
 def _subprocess_runner(command: str) -> CommandResult:
-    proc = subprocess.run(command, shell=True, capture_output=True, text=True)
+    # errors="replace": pentest tooling routinely emits non-UTF-8 bytes (binary
+    # file dumps, /dev/urandom, raw protocol banners). Without this, decoding
+    # raises UnicodeDecodeError and takes down the whole turn instead of just
+    # showing garbled output the model can still reason about.
+    proc = subprocess.run(command, shell=True, capture_output=True,
+                          text=True, errors="replace")
     return CommandResult(proc.stdout, proc.stderr, proc.returncode)
 
 def run_command(command: str, *, scope: Scope, confirm: Callable[[str], bool],
