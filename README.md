@@ -88,6 +88,7 @@ Each provider entry sets `kind` (`anthropic` or `openai_compat`), `model`, an op
 - `/mode [ask|auto|bypass]` - switch permission mode (also: `shift+tab` to cycle)
 - `/model [number|name]` - list the active provider's models, or switch to one
 - `/models` - recommended low-refusal models for ethical-hacking work
+- `/update` - check for a newer PentAI version and show how to install it
 - `/settings` / `/setup` - change AI provider, key, and settings
 - `/sessions` - list past engagements you can resume
 - `/resume [id]` - resume a past engagement (latest if no id given)
@@ -112,6 +113,12 @@ PentAI ships four methodology playbooks in `pentai/skills/` that the agent can l
 - `web-owasp.md`
 - `priv-esc.md`
 - `reporting.md`
+
+## Updates
+
+PentAI is installed from git, not PyPI, so "latest version" means whatever `__version__` is on `main`. Once a day (cached, so it never slows down a normal launch) PentAI checks `main` via `raw.githubusercontent.com` and prints a one-line notice at startup if a newer version is out; run `/update` any time to force a fresh check and get the exact upgrade command for how you installed it (`git pull` for an editable install, `pip install --upgrade` otherwise). No network access, no config, and no account needed - a failed check just stays silent and tries again later.
+
+To publish a new version: bump `__version__` in [`pentai/__init__.py`](pentai/__init__.py) and push to `main`. That's the whole release process - every installed copy picks it up on its next check.
 
 ## Contributing
 

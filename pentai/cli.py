@@ -37,6 +37,7 @@ from .findings import load_findings, render_report, summarize_findings
 from .assets import load_assets, summarize_assets, render_assets
 from .intel import intel_leads, service_intel
 from .model_advice import over_refusal_tip, recommended_text, is_over_refuser
+from .update import update_tip, update_status_text
 from .commands import parse_slash, handle_slash
 from .permissions import MODES, next_mode
 from .toolcheck import check_tools
@@ -356,6 +357,9 @@ def main_classic(argv: list[str] | None = None) -> int:
     _startup_tip = over_refusal_tip(cfg.providers[cfg.active].model)
     if _startup_tip:
         console.print(f"[!] {_startup_tip}", style=palette["alert"], markup=False)
+    _update_tip = update_tip()
+    if _update_tip:
+        console.print(f"[!] {_update_tip}", style=palette["accent"], markup=False)
     _tool_results = check_tools()
     render_toolcheck(console, palette, _tool_results)
     installed_tools = [name for name, ok in _tool_results if ok]
@@ -436,6 +440,9 @@ def main_classic(argv: list[str] | None = None) -> int:
                 continue
             if result == "__models__":
                 console.print(recommended_text(), style=palette["accent"], markup=False)
+                continue
+            if result == "__update__":
+                console.print(update_status_text(), style=palette["accent"], markup=False)
                 continue
             if result == "__sessions__":
                 console.print(format_sessions(_PENTAI_HOME), style=palette["dim"], markup=False)
@@ -690,6 +697,10 @@ def main_tui(argv: list[str]) -> int:
     if _startup_tip:
         output.append(Text(f"[!] {_startup_tip}", style=palette["alert"]),
                       theme=markdown_theme(palette))
+    _update_tip = update_tip()
+    if _update_tip:
+        output.append(Text(f"[!] {_update_tip}", style=palette["accent"]),
+                      theme=markdown_theme(palette))
 
     mode_ref = {"mode": "bypass"}
     cmds_ref = {"n": 0}
@@ -862,6 +873,11 @@ def main_tui(argv: list[str]) -> int:
                 return
             if result == "__models__":
                 output.append(Text(recommended_text(), style=palette["accent"]),
+                    theme=markdown_theme(palette))
+                app.invalidate()
+                return
+            if result == "__update__":
+                output.append(Text(update_status_text(), style=palette["accent"]),
                     theme=markdown_theme(palette))
                 app.invalidate()
                 return

@@ -2,6 +2,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 from .banner import SIGIL
+from .. import __version__
 
 def capability_rows(playbooks: list[str], tools: list[str], modes: list[str]) -> list[tuple[str, str]]:
     def join(xs: list[str]) -> str:
@@ -16,7 +17,7 @@ def render_startup(console, *, palette, provider, model, playbooks, tools, modes
     body = Table.grid(padding=(0, 2))
     body.add_column()
     body.add_column()
-    body.add_row(Text("PentAI", style=f"bold {accent}"), Text("v0.1.0", style=dim))
+    body.add_row(Text("PentAI", style=f"bold {accent}"), Text(f"v{__version__}", style=dim))
     body.add_row(Text("", style=dim), Text("", style=dim))
     for label, value in capability_rows(playbooks, tools, modes):
         body.add_row(Text(label, style=dim), Text(value, style=primary))

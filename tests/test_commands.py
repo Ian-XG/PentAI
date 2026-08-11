@@ -111,6 +111,13 @@ def test_models_sentinel_distinct_from_model():
     assert "/models" in handle_slash("help", [], scope=Scope([]))
     assert "/models" in [c for c, _ in SLASH_COMMANDS]
 
+def test_update_sentinel_and_help():
+    from pentai.scope import Scope
+    from pentai.commands import handle_slash, SLASH_COMMANDS
+    assert handle_slash("update", [], scope=Scope([])) == "__update__"
+    assert "/update" in handle_slash("help", [], scope=Scope([]))
+    assert "/update" in [c for c, _ in SLASH_COMMANDS]
+
 def test_slash_commands_metadata():
     from pentai.commands import SLASH_COMMANDS
     names = [c for c, _ in SLASH_COMMANDS]

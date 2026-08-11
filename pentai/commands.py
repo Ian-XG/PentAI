@@ -1,7 +1,7 @@
 from .scope import Scope
 
 _HELP = ("commands: /scope add <target>, /scope list, /settings, /setup, /model [name], "
-         "/models, /mode [ask|auto|bypass], /sessions, /resume [id], /clear, /notes, "
+         "/models, /mode [ask|auto|bypass], /update, /sessions, /resume [id], /clear, /notes, "
          "/hosts, /intel, /findings, /report, /tools, /playbooks [name], /help, /quit")
 
 SLASH_COMMANDS = [
@@ -9,6 +9,7 @@ SLASH_COMMANDS = [
     ("/mode", "switch permission mode (ask / auto / bypass)"),
     ("/model", "switch model for the active provider, or /model to list"),
     ("/models", "recommended low-refusal models for ethical-hacking work"),
+    ("/update", "check for a newer PentAI version and show how to install it"),
     ("/settings", "change AI provider, key, and settings"),
     ("/sessions", "list past engagements you can resume"),
     ("/resume", "resume a past engagement: /resume <id> (or /resume for the latest)"),
@@ -44,7 +45,7 @@ def handle_slash(command: str, args: list[str], *, scope: Scope) -> str:
     if command in ("setup", "settings"):
         return "__setup__"
     if command in ("clear", "notes", "report", "tools", "playbooks", "model",
-                   "models", "sessions", "resume", "findings", "hosts", "intel"):
+                   "models", "update", "sessions", "resume", "findings", "hosts", "intel"):
         return "__" + command + "__"
     if command == "help":
         return _HELP
