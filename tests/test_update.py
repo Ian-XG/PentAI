@@ -1,4 +1,4 @@
-import json
+import threading
 import time
 
 from pentai.update import (CURRENT_VERSION, is_newer, fetch_latest_version,
@@ -72,10 +72,15 @@ def test_check_for_update_survives_network_failure_silently(tmp_path):
 
 def test_update_tip_none_when_cache_empty(tmp_path):
     # nothing cached yet - must not block on the network to find out, so it
-    # can only say "nothing to report" this run (the default spawn kicks off
-    # a background refresh for next time, but that's not awaited here).
+    # can only say "nothing to report" this run. spawn is a no-op here (never
+    # actually runs the background refresh) so the assertion is deterministic
+    # regardless of the real threading.Thread's scheduling - a fast enough
+    # background fetch racing the synchronous cache read is exercised by
+    # test_update_tip_background_refresh_populates_cache_for_next_call
+    # instead, with an explicitly synchronous spawn.
     assert update_tip(get_fn=_ok('__version__ = "42.0.0"'),
-                      cache_path=tmp_path / "cache.json") is None
+                      cache_path=tmp_path / "cache.json",
+                      spawn=lambda fn: None) is None
 
 def test_update_tip_never_blocks_on_a_slow_network(tmp_path):
     def slow_get(url, timeout):
@@ -121,16 +126,25 @@ def test_update_tip_background_refresh_populates_cache_for_next_call(tmp_path):
     assert calls["n"] == 1              # cache was fresh on the 2nd call - no re-fetch
     assert "7.0.0" in tip2
 
+def test_default_spawn_runs_fn_on_a_background_thread():
+    # isolates _default_spawn itself (the real threading.Thread wiring) from
+    # update_tip's logic, and waits on an Event instead of polling with a
+    # fixed sleep budget - deterministic regardless of scheduler/CI load,
+    # unlike a "poll N times then give up" loop that can lose the race.
+    from pentai.update import _default_spawn
+    ran = threading.Event()
+    _default_spawn(ran.set)
+    assert ran.wait(timeout=2), "background thread never ran fn"
+
 def test_update_tip_default_spawn_does_not_crash_without_a_real_network(tmp_path):
-    # exercises the real threading.Thread default path end-to-end (get_fn still
-    # faked) to make sure the background thread itself is wired correctly.
-    cache_path = tmp_path / "cache.json"
-    update_tip(get_fn=_ok('__version__ = "3.0.0"'), cache_path=cache_path)
-    for _ in range(50):
-        if cache_path.exists():
-            break
-        time.sleep(0.02)
-    assert json.loads(cache_path.read_text())["latest"] == "3.0.0"
+    # exercises update_tip with its real default (threading.Thread) spawn -
+    # must not raise. No assertion on timing/outcome: whether the background
+    # thread happens to finish before this returns is scheduler-dependent and
+    # both outcomes are correct (that determinism is covered separately by
+    # test_default_spawn_runs_fn_on_a_background_thread above and the
+    # explicit-synchronous-spawn tests elsewhere in this file).
+    result = update_tip(get_fn=_ok('__version__ = "3.0.0"'), cache_path=tmp_path / "cache.json")
+    assert result is None or "3.0.0" in result
 
 def test_update_status_text_up_to_date(tmp_path):
     text = f'__version__ = "{CURRENT_VERSION}"\n'
