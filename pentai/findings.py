@@ -22,7 +22,7 @@ _SYNONYMS = {
 @dataclass
 class Finding:
     title: str
-    severity: str
+    severity: str = ""
     target: str = ""
     description: str = ""
     evidence: str = ""

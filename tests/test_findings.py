@@ -63,6 +63,16 @@ def test_load_findings_renormalizes_stored_severity(tmp_path: Path):
         json.dumps([{"title": "x", "severity": "BOGUS"}]))
     assert load_findings(tmp_path)[0].severity == "info"
 
+def test_load_findings_tolerates_missing_severity_key(tmp_path: Path):
+    # a record with no 'severity' at all (hand-edited, partial write, older
+    # schema) must not crash load_findings - it runs on every turn.
+    import json
+    (tmp_path / "findings.json").write_text(json.dumps([{"title": "no severity field"}]))
+    loaded = load_findings(tmp_path)
+    assert len(loaded) == 1
+    assert loaded[0].title == "no severity field"
+    assert loaded[0].severity == "info"
+
 def test_render_report_has_summary_table_and_sorted_findings():
     findings = [
         Finding(title="Info leak", severity="info", id="F-002"),
