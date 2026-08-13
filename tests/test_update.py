@@ -1,3 +1,6 @@
+import json
+import time
+
 from pentai.update import (CURRENT_VERSION, is_newer, fetch_latest_version,
                            check_for_update, update_tip, update_status_text)
 
@@ -67,16 +70,67 @@ def test_check_for_update_force_bypasses_cache(tmp_path):
 def test_check_for_update_survives_network_failure_silently(tmp_path):
     assert check_for_update(get_fn=_fail, cache_path=tmp_path / "cache.json") is None
 
-def test_update_tip_none_when_current(tmp_path):
-    text = f'__version__ = "{CURRENT_VERSION}"\n'
-    assert update_tip(get_fn=_ok(text), cache_path=tmp_path / "cache.json") is None
+def test_update_tip_none_when_cache_empty(tmp_path):
+    # nothing cached yet - must not block on the network to find out, so it
+    # can only say "nothing to report" this run (the default spawn kicks off
+    # a background refresh for next time, but that's not awaited here).
+    assert update_tip(get_fn=_ok('__version__ = "42.0.0"'),
+                      cache_path=tmp_path / "cache.json") is None
 
-def test_update_tip_mentions_versions_and_update_command(tmp_path):
-    tip = update_tip(get_fn=_ok('__version__ = "42.0.0"'), cache_path=tmp_path / "cache.json")
+def test_update_tip_never_blocks_on_a_slow_network(tmp_path):
+    def slow_get(url, timeout):
+        time.sleep(0.5)
+        return '__version__ = "1.0.0"'
+    start = time.time()
+    result = update_tip(get_fn=slow_get, cache_path=tmp_path / "cache.json")
+    assert time.time() - start < 0.2   # returned long before slow_get finished
+    assert result is None              # nothing cached yet
+
+def test_update_tip_reads_a_prewarmed_cache_synchronously(tmp_path):
+    cache_path = tmp_path / "cache.json"
+    check_for_update(get_fn=_ok('__version__ = "42.0.0"'), cache_path=cache_path)
+    tip = update_tip(get_fn=_fail, cache_path=cache_path)  # network unused - cache is fresh
     assert tip is not None
     assert CURRENT_VERSION in tip
     assert "42.0.0" in tip
     assert "/update" in tip
+
+def test_update_tip_none_when_cache_is_current(tmp_path):
+    cache_path = tmp_path / "cache.json"
+    text = f'__version__ = "{CURRENT_VERSION}"\n'
+    check_for_update(get_fn=_ok(text), cache_path=cache_path)
+    assert update_tip(get_fn=_fail, cache_path=cache_path) is None
+
+def test_update_tip_synchronous_spawn_reflects_a_fresh_fetch(tmp_path):
+    tip = update_tip(get_fn=_ok('__version__ = "42.0.0"'), cache_path=tmp_path / "cache.json",
+                     spawn=lambda fn: fn())
+    assert tip is not None
+    assert CURRENT_VERSION in tip
+    assert "42.0.0" in tip
+    assert "/update" in tip
+
+def test_update_tip_background_refresh_populates_cache_for_next_call(tmp_path):
+    cache_path = tmp_path / "cache.json"
+    calls = {"n": 0}
+    def counting_get(url, timeout):
+        calls["n"] += 1
+        return '__version__ = "7.0.0"'
+    synchronous_spawn = lambda fn: fn()
+    update_tip(get_fn=counting_get, cache_path=cache_path, spawn=synchronous_spawn)
+    tip2 = update_tip(get_fn=counting_get, cache_path=cache_path, spawn=synchronous_spawn)
+    assert calls["n"] == 1              # cache was fresh on the 2nd call - no re-fetch
+    assert "7.0.0" in tip2
+
+def test_update_tip_default_spawn_does_not_crash_without_a_real_network(tmp_path):
+    # exercises the real threading.Thread default path end-to-end (get_fn still
+    # faked) to make sure the background thread itself is wired correctly.
+    cache_path = tmp_path / "cache.json"
+    update_tip(get_fn=_ok('__version__ = "3.0.0"'), cache_path=cache_path)
+    for _ in range(50):
+        if cache_path.exists():
+            break
+        time.sleep(0.02)
+    assert json.loads(cache_path.read_text())["latest"] == "3.0.0"
 
 def test_update_status_text_up_to_date(tmp_path):
     text = f'__version__ = "{CURRENT_VERSION}"\n'

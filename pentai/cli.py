@@ -877,9 +877,12 @@ def main_tui(argv: list[str]) -> int:
                 app.invalidate()
                 return
             if result == "__update__":
-                output.append(Text(update_status_text(), style=palette["accent"]),
-                    theme=markdown_theme(palette))
-                app.invalidate()
+                # update_status_text() forces a live network check - run it off
+                # the loop thread (like agent turns) so it can't freeze the UI.
+                def _check_update() -> None:
+                    _post(Text(update_status_text(), style=palette["accent"]),
+                          theme=markdown_theme(palette))
+                threading.Thread(target=_check_update, daemon=True).start()
                 return
             if result == "__sessions__":
                 output.append(Text(format_sessions(_PENTAI_HOME), style=palette["dim"]),

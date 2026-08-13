@@ -7,6 +7,7 @@ copy picks it up on its next check."""
 
 import json
 import re
+import threading
 import time
 from pathlib import Path
 from typing import Callable
@@ -44,9 +45,10 @@ def fetch_latest_version(get_fn: GetFn = _default_get, timeout: float = 2.0) -> 
 
 def _load_cache(path: Path) -> dict:
     try:
-        return json.loads(path.read_text())
+        data = json.loads(path.read_text())
     except (OSError, ValueError):
         return {}
+    return data if isinstance(data, dict) else {}
 
 def _save_cache(data: dict, path: Path) -> None:
     try:
@@ -78,11 +80,20 @@ def update_instructions() -> str:
         return f"cd {repo_root} && git pull && pip install -e .[dev]"
     return f"pip install --upgrade git+{_REPO_URL}.git"
 
-def update_tip(*, force: bool = False, get_fn: GetFn = _default_get,
-              cache_path: Path = _CACHE_PATH) -> str | None:
-    """One-line startup notice, or None if already current."""
-    latest = check_for_update(force=force, get_fn=get_fn, cache_path=cache_path)
-    if latest is None:
+def _default_spawn(fn: Callable[[], None]) -> None:
+    threading.Thread(target=fn, daemon=True).start()
+
+def update_tip(*, get_fn: GetFn = _default_get, cache_path: Path = _CACHE_PATH,
+               spawn: Callable[[Callable[[], None]], None] = _default_spawn) -> str | None:
+    """One-line startup notice, or None if already current. Reads ONLY the
+    cache - a live version check must never add network latency to boot. If
+    the cache is stale (or missing), a refresh is kicked off via `spawn`
+    (a background thread by default) so the *next* launch has fresh data;
+    check_for_update's own interval logic makes this a no-op when the cache
+    is already fresh, so calling it unconditionally here is cheap."""
+    spawn(lambda: check_for_update(get_fn=get_fn, cache_path=cache_path))
+    latest = _load_cache(cache_path).get("latest")
+    if latest is None or not is_newer(latest):
         return None
     return f"update available: v{CURRENT_VERSION} -> v{latest} - run /update for instructions"
 
