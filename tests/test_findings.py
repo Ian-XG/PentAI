@@ -34,6 +34,27 @@ def test_finding_ids_increment(tmp_path: Path):
     b = add_finding(tmp_path, title="b", severity="high")
     assert a.id == "F-001" and b.id == "F-002"
 
+def test_finding_id_skips_past_a_gap_instead_of_colliding(tmp_path: Path):
+    # a hand-edited findings.json with F-002 removed left F-001 and F-003;
+    # len(existing)+1 would recompute F-003 again and collide.
+    import json
+    (tmp_path / "findings.json").write_text(json.dumps([
+        {"id": "F-001", "title": "a", "severity": "low"},
+        {"id": "F-003", "title": "b", "severity": "low"},
+    ]))
+    c = add_finding(tmp_path, title="c", severity="low")
+    assert c.id == "F-004"
+    ids = [f.id for f in load_findings(tmp_path)]
+    assert len(ids) == len(set(ids))          # no duplicate IDs
+
+def test_finding_id_falls_back_when_no_findings_have_a_parseable_id(tmp_path: Path):
+    import json
+    (tmp_path / "findings.json").write_text(json.dumps([
+        {"id": "", "title": "hand-added, no id", "severity": "low"},
+    ]))
+    f = add_finding(tmp_path, title="new", severity="low")
+    assert f.id == "F-002"                    # len(existing) + 1, the safe fallback
+
 def test_load_findings_missing_returns_empty(tmp_path: Path):
     assert load_findings(tmp_path) == []
 
