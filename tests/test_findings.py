@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 from pentai.findings import (Finding, SEVERITIES, normalize_severity, severity_rank,
                             add_finding, load_findings, render_report)
@@ -54,6 +55,12 @@ def test_finding_id_falls_back_when_no_findings_have_a_parseable_id(tmp_path: Pa
     ]))
     f = add_finding(tmp_path, title="new", severity="low")
     assert f.id == "F-002"                    # len(existing) + 1, the safe fallback
+
+def test_findings_json_is_written_0600(tmp_path: Path):
+    # findings carry credentials and evidence - must never be group/other
+    # readable, not even transiently during the write.
+    add_finding(tmp_path, title="a", severity="low")
+    assert (os.stat(tmp_path / "findings.json").st_mode & 0o777) == 0o600
 
 def test_load_findings_missing_returns_empty(tmp_path: Path):
     assert load_findings(tmp_path) == []

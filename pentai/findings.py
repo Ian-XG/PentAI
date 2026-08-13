@@ -92,11 +92,14 @@ def _save_findings(session_dir: Path, findings: list[Finding]) -> None:
     path = _findings_path(session_dir)
     payload = json.dumps([asdict(f) for f in findings], indent=1)
     tmp = path.with_suffix(".json.tmp")
-    tmp.write_text(payload)
+    # Create the tmp file at 0600 from its first byte instead of writing then
+    # chmod'ing - findings carry credentials and evidence, so there must be
+    # no window where a (partially written) copy has default permissions.
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     try:
-        os.chmod(tmp, 0o600)
-    except OSError:
-        pass
+        os.write(fd, payload.encode())
+    finally:
+        os.close(fd)
     tmp.replace(path)
 
 def _next_id(existing: list[Finding]) -> str:
