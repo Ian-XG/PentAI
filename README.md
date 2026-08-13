@@ -116,7 +116,7 @@ PentAI ships four methodology playbooks in `pentai/skills/` that the agent can l
 
 ## Updates
 
-PentAI is installed from git, not PyPI, so "latest version" means whatever `__version__` is on `main`. Once a day (cached, so it never slows down a normal launch) PentAI checks `main` via `raw.githubusercontent.com` and prints a one-line notice at startup if a newer version is out; run `/update` any time to force a fresh check and get the exact upgrade command for how you installed it (`git pull` for an editable install, `pip install --upgrade` otherwise). No network access, no config, and no account needed - a failed check just stays silent and tries again later.
+PentAI is installed from git, not PyPI, so "latest version" means whatever `__version__` is on `main`. Once a day (cached) PentAI makes an unauthenticated GET to `raw.githubusercontent.com` to check `main` and prints a one-line notice at startup if a newer version is out; run `/update` any time to force a fresh check and get the exact upgrade command for how you installed it (`git pull` for an editable install, `pip install --upgrade` otherwise). No config and no account needed - a failed check just stays silent and tries again later. If you're running PentAI somewhere offline or network-restricted, this is the one outbound call it makes on its own; everything else only talks to your configured AI provider.
 
 To publish a new version: bump `__version__` in [`pentai/__init__.py`](pentai/__init__.py) and push to `main`. That's the whole release process - every installed copy picks it up on its next check.
 
