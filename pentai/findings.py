@@ -5,6 +5,7 @@ professional engagement report. Stored per-session in findings.json, written
 0600 - findings carry credentials and evidence and never leave the machine."""
 import json
 import os
+import re
 from dataclasses import dataclass, field, asdict, fields
 from pathlib import Path
 
@@ -98,13 +99,21 @@ def _save_findings(session_dir: Path, findings: list[Finding]) -> None:
         pass
     tmp.replace(path)
 
+def _next_id(existing: list[Finding]) -> str:
+    """F-NNN, one past the highest existing numeric suffix - not
+    len(existing) + 1, which collides with an existing ID whenever the list
+    has a gap (e.g. a hand-edited findings.json with an entry removed)."""
+    nums = [int(m.group(1)) for f in existing
+            if (m := re.match(r"^F-(\d+)$", f.id or ""))]
+    return f"F-{(max(nums) + 1) if nums else len(existing) + 1:03d}"
+
 def add_finding(session_dir: Path, *, title: str, severity: str, target: str = "",
                 description: str = "", evidence: str = "", remediation: str = "",
                 now=_now) -> Finding:
     existing = load_findings(session_dir)
     f = Finding(title=title.strip(), severity=normalize_severity(severity),
                 target=target, description=description, evidence=evidence,
-                remediation=remediation, id=f"F-{len(existing) + 1:03d}",
+                remediation=remediation, id=_next_id(existing),
                 created_at=now())
     existing.append(f)
     _save_findings(session_dir, existing)
