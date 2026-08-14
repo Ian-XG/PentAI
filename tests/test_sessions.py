@@ -15,6 +15,28 @@ def test_new_session_creates_dir_and_meta(tmp_path: Path):
     # a freshly created session is discoverable
     assert load_session(tmp_path, "20260804_101500").meta.model == "gpt-oss:20b"
 
+def test_new_session_same_second_does_not_clobber(tmp_path: Path):
+    # _now()'s 1-second resolution means two sessions can share a stamp -
+    # the second one must not silently overwrite the first's meta.json.
+    s1 = new_session(tmp_path, provider="a", model="x", now=lambda: "20260814_120000")
+    s2 = new_session(tmp_path, provider="b", model="y", now=lambda: "20260814_120000")
+    assert s1.dir != s2.dir
+    assert s1.id != s2.id
+    assert load_session(tmp_path, s1.id).meta.provider == "a"
+    assert load_session(tmp_path, s2.id).meta.provider == "b"
+
+def test_new_session_collision_keeps_true_created_at(tmp_path: Path):
+    new_session(tmp_path, now=lambda: "20260814_120000")
+    s2 = new_session(tmp_path, now=lambda: "20260814_120000")
+    assert s2.meta.created_at == "20260814_120000"   # true timestamp, unsuffixed
+    assert s2.id != "20260814_120000"                # id disambiguated
+
+def test_new_session_collision_sorts_newest_first(tmp_path: Path):
+    s1 = new_session(tmp_path, now=lambda: "20260814_120000")
+    s2 = new_session(tmp_path, now=lambda: "20260814_120000")
+    ids = [m.id for m in list_sessions(tmp_path)]
+    assert ids == [s2.id, s1.id]   # s2 created after s1, sorts first
+
 def test_transcript_and_notes_paths_live_in_session_dir(tmp_path: Path):
     s = new_session(tmp_path, now=lambda: "20260804_101500")
     assert s.transcript_path == s.dir / "transcript.json"
