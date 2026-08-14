@@ -37,7 +37,8 @@ from .findings import load_findings, render_report, summarize_findings
 from .assets import load_assets, summarize_assets, render_assets
 from .intel import intel_leads, service_intel
 from .model_advice import over_refusal_tip, recommended_text, is_over_refuser
-from .update import update_tip, update_status_text
+from .update import (update_tip, update_status_text, check_for_update, perform_update,
+                     update_instructions, CURRENT_VERSION)
 from .commands import parse_slash, handle_slash
 from .permissions import MODES, next_mode
 from .toolcheck import check_tools
@@ -643,6 +644,29 @@ def main_settings(argv: list[str] | None = None) -> int:
     console.print(f"[ OK ] saved {path}", style=palette["accent"])
     return 0
 
+def main_update(argv: list[str] | None = None) -> int:
+    """`pentai --update` / `pentai update`: actually perform the upgrade
+    (unlike /update inside a session, which only prints instructions) and
+    exit - no wizard, no TUI, safe to run non-interactively."""
+    console = Console()
+    palette = get_palette("green")
+    console.print("checking for updates...", style=palette["dim"])
+    latest = check_for_update(force=True)
+    if latest is None:
+        console.print(f"[ OK ] pentai v{CURRENT_VERSION} - already up to date",
+                      style=palette["accent"])
+        return 0
+    console.print(f"update available: v{CURRENT_VERSION} -> v{latest}", style=palette["accent"])
+    ok, msg = perform_update()
+    if not ok:
+        console.print(f"[!] update failed: {msg}", style=palette["alert"], markup=False)
+        console.print(f"try manually: {update_instructions()}", style=palette["dim"], markup=False)
+        return 1
+    console.print(msg, style=palette["dim"], markup=False)
+    console.print(f"[ OK ] updated to v{latest} - restart pentai to use it",
+                  style=palette["accent"])
+    return 0
+
 def main_tui(argv: list[str]) -> int:
     console = Console()
     if needs_onboarding():
@@ -1000,4 +1024,6 @@ def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     if "--settings" in argv:
         return main_settings(argv)
+    if "--update" in argv or (argv and argv[0] == "update"):
+        return main_update(argv)
     return main_classic(argv) if "--classic" in argv else main_tui(argv)

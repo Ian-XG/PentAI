@@ -202,6 +202,53 @@ def test_main_settings_flag_dispatches(monkeypatch):
     cli.main(["--settings"])
     assert "settings" in calls and "tui" not in calls and "classic" not in calls
 
+def test_main_update_flag_dispatches(monkeypatch):
+    import pentai.cli as cli
+    calls = {}
+    monkeypatch.setattr(cli, "main_update", lambda argv=None: calls.setdefault("update", argv) or 0)
+    monkeypatch.setattr(cli, "main_tui", lambda argv: calls.setdefault("tui", argv) or 0)
+    cli.main(["--update"])
+    assert "update" in calls and "tui" not in calls
+
+def test_main_update_bare_subcommand_dispatches(monkeypatch):
+    import pentai.cli as cli
+    calls = {}
+    monkeypatch.setattr(cli, "main_update", lambda argv=None: calls.setdefault("update", argv) or 0)
+    monkeypatch.setattr(cli, "main_tui", lambda argv: calls.setdefault("tui", argv) or 0)
+    cli.main(["update"])
+    assert "update" in calls and "tui" not in calls
+
+def test_main_update_already_current(monkeypatch, capsys):
+    import pentai.cli as cli
+    monkeypatch.setattr(cli, "check_for_update", lambda force=True: None)
+    called = {}
+    monkeypatch.setattr(cli, "perform_update", lambda: called.setdefault("ran", True))
+    rc = cli.main_update([])
+    assert rc == 0
+    assert "ran" not in called                 # no update available - never runs pip/git
+    assert "up to date" in capsys.readouterr().out.lower()
+
+def test_main_update_performs_upgrade_when_available(monkeypatch, capsys):
+    import pentai.cli as cli
+    monkeypatch.setattr(cli, "check_for_update", lambda force=True: "99.0.0")
+    monkeypatch.setattr(cli, "perform_update", lambda: (True, "Updating abc..def"))
+    rc = cli.main_update([])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "99.0.0" in out
+    assert "updated" in out.lower()
+
+def test_main_update_reports_failure_with_manual_fallback(monkeypatch, capsys):
+    import pentai.cli as cli
+    monkeypatch.setattr(cli, "check_for_update", lambda force=True: "99.0.0")
+    monkeypatch.setattr(cli, "perform_update", lambda: (False, "git pull failed: conflict"))
+    monkeypatch.setattr(cli, "update_instructions", lambda: "cd /repo && git pull")
+    rc = cli.main_update([])
+    assert rc == 1
+    out = capsys.readouterr().out
+    assert "conflict" in out
+    assert "cd /repo && git pull" in out
+
 def test_run_settings_merges_into_existing_config():
     from pentai.cli import run_settings
     current = {"active": "anthropic",
