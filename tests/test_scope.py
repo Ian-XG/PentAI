@@ -47,3 +47,19 @@ def test_scope_add_preserves_cidr():
     s.add("10.0.0.0/24")
     assert s.entries == ["10.0.0.0/24"]
     assert s.contains("10.0.0.5")
+
+def test_scope_add_strips_port_from_url():
+    # a scope entry added with a port must still match a command targeting
+    # the same host without one - extract_targets never captures a port, so
+    # keeping it made an explicitly authorized host spuriously "out of scope".
+    s = Scope([])
+    s.add("https://10.0.0.5:8443/api")
+    assert s.entries == ["10.0.0.5"]
+    assert s.contains("10.0.0.5")
+    assert s.out_of_scope("curl http://10.0.0.5:8443/other") == []
+
+def test_scope_add_strips_port_without_scheme():
+    s = Scope([])
+    s.add("example.com:8080")
+    assert s.entries == ["example.com"]
+    assert s.contains("example.com")
