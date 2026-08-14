@@ -6,7 +6,7 @@ surface, and rendered into the report. Stored per-session in assets.json, 0600
 - host/service inventory is engagement data and stays on the machine."""
 import json
 import os
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field, asdict, fields
 from pathlib import Path
 
 @dataclass
@@ -28,6 +28,29 @@ class Host:
 def _assets_path(session_dir: Path) -> Path:
     return session_dir / "assets.json"
 
+_SERVICE_FIELDS = {f.name for f in fields(Service)}
+
+def _service_from_dict(s) -> Service | None:
+    if not isinstance(s, dict) or "port" not in s:
+        return None
+    known = {k: v for k, v in s.items() if k in _SERVICE_FIELDS}
+    try:
+        return Service(**known)
+    except TypeError:
+        return None
+
+def _host_from_dict(h) -> Host | None:
+    """Build a Host from a stored dict, tolerating extra/missing service keys
+    and dropping only a genuinely unparseable service - not the whole host.
+    Returns None if there isn't even an address to salvage. load_assets runs
+    on nearly every turn, so one stale record must never crash the session."""
+    if not isinstance(h, dict) or not h.get("address"):
+        return None
+    services = [s for s in (_service_from_dict(sd) for sd in h.get("services") or [])
+               if s is not None]
+    return Host(address=h["address"], hostname=h.get("hostname", ""),
+               os=h.get("os", ""), services=services)
+
 def load_assets(session_dir: Path) -> list[Host]:
     try:
         data = json.loads(_assets_path(session_dir).read_text())
@@ -35,12 +58,8 @@ def load_assets(session_dir: Path) -> list[Host]:
         return []
     if not isinstance(data, list):
         return []
-    hosts = []
-    for h in data:
-        services = [Service(**s) for s in h.get("services", [])]
-        hosts.append(Host(address=h["address"], hostname=h.get("hostname", ""),
-                          os=h.get("os", ""), services=services))
-    return hosts
+    hosts = [_host_from_dict(h) for h in data]
+    return [h for h in hosts if h is not None]
 
 def _save_assets(session_dir: Path, hosts: list[Host]) -> None:
     session_dir.mkdir(parents=True, exist_ok=True)
