@@ -47,7 +47,9 @@ def _split_version(rest: str) -> tuple[str, str]:
         return "", ""
     parts = rest.split()
     for i, tok in enumerate(parts):
-        if i > 0 and re.match(r"^\d", tok):        # first numeric-leading token after product
+        # first version-looking token after the product: a leading digit
+        # ("8.2p1"), or a single letter then a digit ("v1.14.0", "R2019a")
+        if i > 0 and re.match(r"^[A-Za-z]?\d", tok):
             return " ".join(parts[:i]), tok
     return parts[0], ""
 
