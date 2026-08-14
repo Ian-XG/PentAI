@@ -65,3 +65,25 @@ def test_load_config_file_empty_returns_default(tmp_path):
     p.write_text("")
     cfg = load_config_file(p, env={})
     assert cfg.active == "anthropic"
+
+def test_load_config_raises_on_missing_active_key():
+    # documents the exact failure a malformed/hand-edited config.yaml can
+    # produce - callers (cli.py's startup and /setup reload) must catch this
+    # and fall back to default_config() rather than crash the session.
+    import pytest
+    data = {"providers": {"anthropic": {"kind": "anthropic", "model": "x"}}}
+    with pytest.raises(KeyError):
+        load_config(data)
+
+def test_load_config_raises_on_bad_command_timeout():
+    import pytest
+    data = {"active": "anthropic", "command_timeout": "none",
+            "providers": {"anthropic": {"kind": "anthropic", "model": "x"}}}
+    with pytest.raises(ValueError):
+        load_config(data)
+
+def test_load_config_raises_on_provider_missing_required_field():
+    import pytest
+    data = {"active": "anthropic", "providers": {"anthropic": {"kind": "anthropic"}}}  # no model
+    with pytest.raises(TypeError):
+        load_config(data)
