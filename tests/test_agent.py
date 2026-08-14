@@ -19,6 +19,24 @@ def test_plain_text_turn():
     out = list(agent.send("hi"))
     assert any(isinstance(e, TextDelta) and e.text == "hello" for e in out)
 
+def test_empty_turn_does_not_poison_history():
+    # a provider stream with no TextDelta and no ToolCallEvent (e.g. it only
+    # emits Done, or only a Notice with nothing else) must not append an
+    # empty assistant message - Anthropic's API rejects empty content, and
+    # since history is durable, a poisoned entry breaks every later send().
+    prov = ScriptedProvider([[Done("end")]])
+    agent = Agent(prov, "sys", {})
+    list(agent.send("hi"))
+    assert not any(m.role == "assistant" for m in agent.history)
+
+def test_empty_turn_still_ends_after_one_iteration():
+    # even though nothing gets appended, an empty turn must not loop forever
+    # or hang - it has no pending tool calls, so it ends after one round-trip.
+    prov = ScriptedProvider([[Done("end")]])
+    agent = Agent(prov, "sys", {})
+    list(agent.send("hi"))
+    assert prov.calls == 1
+
 def test_tool_call_then_final_answer():
     tool = Tool("run_command", "run", {"type": "object"})
     calls = []
