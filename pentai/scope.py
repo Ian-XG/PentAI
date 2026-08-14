@@ -31,6 +31,15 @@ def _normalize_entry(entry: str) -> str:
         host, _, rest = entry.partition("/")
         if not rest.isdigit():  # a URL path, not a CIDR mask - drop it
             entry = host
+    # strip a trailing :port (https://host:8443 -> host) - extract_targets
+    # never captures a port, so an entry that keeps one can never match the
+    # target later, spuriously flagging an explicitly authorized host as out
+    # of scope. Guarded to a single colon so a bare IPv6 address (unsupported
+    # elsewhere in this module) is left alone rather than mis-split.
+    if entry.count(":") == 1:
+        host, _, port = entry.rpartition(":")
+        if port.isdigit():
+            entry = host
     return entry
 
 def _looks_like_file(host: str) -> bool:
