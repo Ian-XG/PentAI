@@ -69,11 +69,15 @@ class Session:
         except OSError:
             pass
         meta_path = self.dir / "meta.json"
-        meta_path.write_text(json.dumps(asdict(self.meta), indent=1))
+        payload = json.dumps(asdict(self.meta), indent=1)
+        # Create at 0600 from the first byte instead of write-then-chmod - no
+        # window where meta.json (provider/model/scope/title) is briefly
+        # world/group-readable. Same fix as findings.py in commit 5e8947b.
+        fd = os.open(meta_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         try:
-            os.chmod(meta_path, 0o600)
-        except OSError:
-            pass
+            os.write(fd, payload.encode())
+        finally:
+            os.close(fd)
 
 def _sessions_root(base: Path) -> Path:
     return base / "sessions"
