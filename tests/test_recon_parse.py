@@ -90,3 +90,12 @@ def test_parse_service_without_version_leaves_product_empty():
             "22/tcp open  ssh\n")
     s = parse_nmap(text)[0].services[0]
     assert s.name == "ssh" and s.product == "" and s.version == ""
+
+def test_parse_keeps_letter_prefixed_version():
+    # nmap renders some products' versions with a leading letter ("v1.14.0"),
+    # which a digit-only match drops entirely instead of parsing.
+    text = ("Nmap scan report for 10.0.0.9\n"
+            "PORT   STATE SERVICE VERSION\n"
+            "80/tcp open  http    nginx v1.14.0 (Ubuntu)\n")
+    s = parse_nmap(text)[0].services[0]
+    assert s.product == "nginx" and s.version == "v1.14.0"
