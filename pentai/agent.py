@@ -48,7 +48,8 @@ class Agent:
                 elif isinstance(ev, Done):
                     pass
             assistant_text = "".join(text_parts)
-            self.history.append(Message("assistant", assistant_text, tool_calls=pending))
+            if assistant_text or pending:
+                self.history.append(Message("assistant", assistant_text, tool_calls=pending))
             if not pending:
                 return
             for call in pending:
