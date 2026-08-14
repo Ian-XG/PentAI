@@ -97,9 +97,13 @@ def load_session(base: Path, session_id: str) -> Session | None:
     meta_path = d / "meta.json"
     try:
         data = json.loads(meta_path.read_text())
-    except (FileNotFoundError, json.JSONDecodeError, ValueError):
+        return Session(d, SessionMeta(**data))
+    except (FileNotFoundError, json.JSONDecodeError, ValueError, TypeError):
+        # TypeError: meta.json parsed fine but doesn't match SessionMeta's
+        # shape (missing required field, or valid JSON that isn't even an
+        # object) - a stale/incompatible session must not crash /sessions,
+        # /resume, or the default resume-latest startup path.
         return None
-    return Session(d, SessionMeta(**data))
 
 def list_sessions(base: Path) -> list[SessionMeta]:
     root = _sessions_root(base)

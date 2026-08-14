@@ -56,6 +56,25 @@ def test_list_sessions_ignores_dirs_without_meta(tmp_path: Path):
     ids = [m.id for m in list_sessions(tmp_path)]
     assert ids == ["20260801_090000"]
 
+def test_load_session_tolerates_meta_missing_required_fields(tmp_path: Path):
+    # a stale/incompatible meta.json (older schema, hand-edited, partial
+    # write) must not crash /sessions, /resume, or the resume-latest
+    # startup path - just be skipped like a missing session would be.
+    import json
+    sdir = tmp_path / "sessions" / "20260813_120000"
+    sdir.mkdir(parents=True)
+    (sdir / "meta.json").write_text(json.dumps({"id": "20260813_120000"}))
+    assert load_session(tmp_path, "20260813_120000") is None
+
+def test_list_sessions_skips_a_malformed_meta_without_crashing(tmp_path: Path):
+    import json
+    new_session(tmp_path, now=lambda: "20260801_090000")
+    bad = tmp_path / "sessions" / "20260802_090000"
+    bad.mkdir(parents=True)
+    (bad / "meta.json").write_text(json.dumps({"id": "20260802_090000"}))
+    ids = [m.id for m in list_sessions(tmp_path)]
+    assert ids == ["20260801_090000"]
+
 def test_derive_title_from_first_user_message():
     assert derive_title([Message("assistant", "hi"),
                          Message("user", "pop the DC")]) == "pop the DC"
