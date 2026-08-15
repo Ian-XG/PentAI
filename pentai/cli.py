@@ -425,7 +425,16 @@ def main_classic(argv: list[str] | None = None) -> int:
                     continue
                 merged = merge_provider(read_config_file(), wiz)
                 save_config(merged)
-                cfg = load_config_file()
+                try:
+                    cfg = load_config_file()
+                except Exception as e:
+                    # the reload can fail even though the save above succeeded,
+                    # e.g. a malformed *other* provider entry already sitting in
+                    # config.yaml from an older/hand-edited file - same fallback
+                    # startup already uses, so /setup can't crash the session.
+                    console.print(f"[!] saved, but could not reload config, using "
+                                  f"defaults: {e}", style=palette["alert"], markup=False)
+                    cfg = default_config()
                 palette = get_palette(cfg.palette)
                 console.push_theme(markdown_theme(palette))
                 scope = Scope(cfg.scope)
