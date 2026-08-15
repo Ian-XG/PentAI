@@ -156,3 +156,67 @@ def test_update_status_text_shows_upgrade_instructions(tmp_path):
     out = update_status_text(get_fn=_ok('__version__ = "9.9.9"'), cache_path=tmp_path / "cache.json")
     assert "9.9.9" in out
     assert "pip install" in out
+
+def _completed(cmd, returncode=0, stdout="", stderr=""):
+    import subprocess
+    return subprocess.CompletedProcess(cmd, returncode, stdout=stdout, stderr=stderr)
+
+def test_update_instructions_editable_install(monkeypatch, tmp_path):
+    from pentai import update as update_mod
+    monkeypatch.setattr(update_mod, "_repo_root", lambda: tmp_path)
+    (tmp_path / ".git").mkdir()
+    instr = update_mod.update_instructions()
+    assert "git pull" in instr and str(tmp_path) in instr
+
+def test_update_instructions_non_editable_install(monkeypatch, tmp_path):
+    from pentai import update as update_mod
+    monkeypatch.setattr(update_mod, "_repo_root", lambda: tmp_path)  # no .git
+    instr = update_mod.update_instructions()
+    assert instr == "pip install --upgrade git+https://github.com/Ian-XG/PentAI.git"
+
+def test_perform_update_editable_runs_git_pull_then_pip_install(monkeypatch, tmp_path):
+    from pentai import update as update_mod
+    monkeypatch.setattr(update_mod, "_repo_root", lambda: tmp_path)
+    (tmp_path / ".git").mkdir()
+    calls = []
+    def fake_run(cmd, cwd):
+        calls.append((cmd, cwd))
+        return _completed(cmd, stdout="Already up to date.\n")
+    ok, msg = update_mod.perform_update(run_fn=fake_run)
+    assert ok is True
+    assert calls[0] == (["git", "pull"], tmp_path)
+    assert calls[1] == (["pip", "install", "-e", ".[dev]"], tmp_path)
+    assert "Already up to date" in msg
+
+def test_perform_update_editable_reports_git_pull_failure(monkeypatch, tmp_path):
+    from pentai import update as update_mod
+    monkeypatch.setattr(update_mod, "_repo_root", lambda: tmp_path)
+    (tmp_path / ".git").mkdir()
+    def fake_run(cmd, cwd):
+        return _completed(cmd, returncode=1, stderr="local changes would be overwritten")
+    ok, msg = update_mod.perform_update(run_fn=fake_run)
+    assert ok is False
+    assert "local changes" in msg
+
+def test_perform_update_editable_reports_pip_install_failure(monkeypatch, tmp_path):
+    from pentai import update as update_mod
+    monkeypatch.setattr(update_mod, "_repo_root", lambda: tmp_path)
+    (tmp_path / ".git").mkdir()
+    def fake_run(cmd, cwd):
+        if cmd[0] == "git":
+            return _completed(cmd, stdout="Updating abc..def\n")
+        return _completed(cmd, returncode=1, stderr="pip broke")
+    ok, msg = update_mod.perform_update(run_fn=fake_run)
+    assert ok is False
+    assert "pip broke" in msg
+
+def test_perform_update_non_editable_uses_pip_install_upgrade(monkeypatch, tmp_path):
+    from pentai import update as update_mod
+    monkeypatch.setattr(update_mod, "_repo_root", lambda: tmp_path)  # no .git
+    calls = []
+    def fake_run(cmd, cwd):
+        calls.append((cmd, cwd))
+        return _completed(cmd)
+    ok, msg = update_mod.perform_update(run_fn=fake_run)
+    assert ok is True
+    assert calls == [(["pip", "install", "--upgrade", "git+https://github.com/Ian-XG/PentAI.git"], None)]

@@ -36,6 +36,7 @@ This drops you into a full-screen terminal UI: a scrolling output pane, an input
 pentai --classic     # plain scrolling REPL (root@pentai:~# prompt) instead of the full-screen UI
 pentai --classic --no-fx   # classic mode without the boot animation
 pentai --settings    # re-run the provider/model/key setup wizard
+pentai update        # check for a newer version and install it (see Updates below)
 pentai -c            # resume the most recent engagement
 pentai --resume <id> # resume a specific engagement (see /sessions for ids)
 ```
@@ -116,7 +117,13 @@ PentAI ships four methodology playbooks in `pentai/skills/` that the agent can l
 
 ## Updates
 
-PentAI is installed from git, not PyPI, so "latest version" means whatever `__version__` is on `main`. Once a day (cached) PentAI makes an unauthenticated GET to `raw.githubusercontent.com` to check `main` and prints a one-line notice at startup if a newer version is out; run `/update` any time to force a fresh check and get the exact upgrade command for how you installed it (`git pull` for an editable install, `pip install --upgrade` otherwise). No config and no account needed - a failed check just stays silent and tries again later. If you're running PentAI somewhere offline or network-restricted, this is the one outbound call it makes on its own; everything else only talks to your configured AI provider.
+PentAI is installed from git, not PyPI, so "latest version" means whatever `__version__` is on `main`. Once a day (cached) PentAI makes an unauthenticated GET to `raw.githubusercontent.com` to check `main` and prints a one-line notice at startup if a newer version is out. No config and no account needed - a failed check just stays silent and tries again later. If you're running PentAI somewhere offline or network-restricted, this is the one outbound call it makes on its own; everything else only talks to your configured AI provider.
+
+```bash
+pentai update    # or: pentai --update
+```
+
+Checks for a new version and, if one's out, actually performs the upgrade - `git pull` + reinstall for an editable install, `pip install --upgrade` otherwise - then tells you to restart. Run it from the shell, no session or wizard needed. Inside a running session, `/update` does the same check but only prints the command instead of running it (a live session can't `pip install` over itself).
 
 To publish a new version: bump `__version__` in [`pentai/__init__.py`](pentai/__init__.py) and push to `main`. That's the whole release process - every installed copy picks it up on its next check.
 

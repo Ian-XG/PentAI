@@ -7,6 +7,7 @@ copy picks it up on its next check."""
 
 import json
 import re
+import subprocess
 import threading
 import time
 from pathlib import Path
@@ -72,13 +73,45 @@ def check_for_update(*, force: bool = False, now: float | None = None,
     _save_cache({"checked_at": now, "latest": latest or cache.get("latest")}, cache_path)
     return latest if latest and is_newer(latest) else None
 
+def _repo_root() -> Path:
+    import pentai
+    return Path(pentai.__file__).resolve().parent.parent
+
+def _is_editable_install(repo_root: Path) -> bool:
+    return (repo_root / ".git").is_dir()
+
 def update_instructions() -> str:
     """How to upgrade, tailored to how this copy was installed."""
-    import pentai
-    repo_root = Path(pentai.__file__).resolve().parent.parent
-    if (repo_root / ".git").is_dir():
+    repo_root = _repo_root()
+    if _is_editable_install(repo_root):
         return f"cd {repo_root} && git pull && pip install -e .[dev]"
     return f"pip install --upgrade git+{_REPO_URL}.git"
+
+RunFn = Callable[[list[str], Path | None], subprocess.CompletedProcess]
+
+def _default_run(cmd: list[str], cwd: Path | None) -> subprocess.CompletedProcess:
+    return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
+
+def perform_update(*, run_fn: RunFn = _default_run) -> tuple[bool, str]:
+    """Actually run the upgrade (unlike update_instructions(), which only
+    describes it) - `git pull` + editable reinstall for a git checkout,
+    `pip install --upgrade` otherwise. Returns (ok, message): message is
+    the git pull summary on success, or the failing command's output on
+    failure. Never raises - a failed update must leave PentAI usable and
+    just report what went wrong."""
+    repo_root = _repo_root()
+    if _is_editable_install(repo_root):
+        pull = run_fn(["git", "pull"], repo_root)
+        if pull.returncode != 0:
+            return False, (pull.stderr or pull.stdout or "git pull failed").strip()
+        install = run_fn(["pip", "install", "-e", ".[dev]"], repo_root)
+        if install.returncode != 0:
+            return False, (install.stderr or install.stdout or "pip install failed").strip()
+        return True, (pull.stdout or "updated").strip()
+    install = run_fn(["pip", "install", "--upgrade", f"git+{_REPO_URL}.git"], None)
+    if install.returncode != 0:
+        return False, (install.stderr or install.stdout or "pip install failed").strip()
+    return True, "updated"
 
 def _default_spawn(fn: Callable[[], None]) -> None:
     threading.Thread(target=fn, daemon=True).start()
