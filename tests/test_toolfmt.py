@@ -22,6 +22,14 @@ def test_prose_mentioning_one_tool_is_not_a_dump():
 def test_short_text_is_never_a_dump():
     assert looks_like_tool_schema_dump('{"arguments"}') is False
 
+def test_detects_dump_dominated_by_record_tools():
+    # record_service/record_finding are 2 of the 5 real agent tools (see
+    # cli.py's AGENT_TOOL_NAMES) - a dump naming mostly those must still be
+    # caught, not just ones mentioning run_command/save_note/load_playbook.
+    dump = ('{ "arguments" : { "record_service" : { "type" : "function" } , '
+            '"record_finding" : { "type" : "function" } } }')
+    assert looks_like_tool_schema_dump(dump) is True
+
 def test_clean_success_hides_exit_and_empty_stderr():
     r = "exit_code=0\n--- stdout ---\n216.198.79.65\n64.29.17.1\n--- stderr ---\n"
     assert format_command_output(r) == "216.198.79.65\n64.29.17.1"
