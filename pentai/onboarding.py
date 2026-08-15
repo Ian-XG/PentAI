@@ -30,7 +30,7 @@ PROVIDER_CHOICES: list[ProviderChoice] = [
                    "gpt-oss:120b", base_url="https://ollama.com/v1",
                    api_key_env="OLLAMA_API_KEY", icon="△"),
     ProviderChoice("custom", "Other (OpenAI-compatible: Groq, OpenRouter, ...)",
-                   "openai_compat", "", api_key_env="OPENAI_API_KEY", needs_base_url=True, icon="◇"),
+                   "openai_compat", "", needs_base_url=True, icon="◇"),
 ]
 
 def build_config(choice: ProviderChoice, *, model: str, api_key: str | None = None,
@@ -62,7 +62,7 @@ def prompt_provider_details(choice: ProviderChoice, prompt_fn: Callable[[str], s
     api_key = None
     if choice.needs_key:
         ask_key = secret_fn or prompt_fn
-        label = f"Paste your {choice.api_key_env}"
+        label = f"Paste your {choice.api_key_env}" if choice.api_key_env else "Paste your API key"
         label += " [enter to keep current]: " if existing_key else ": "
         api_key = ask_key(label).strip() or existing_key or None
     return build_config(choice, model=model, api_key=api_key, base_url=base_url)

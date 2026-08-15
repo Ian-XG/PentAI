@@ -2,7 +2,7 @@ from pathlib import Path
 import yaml
 from pentai.onboarding import (ProviderChoice, PROVIDER_CHOICES, build_config,
                                run_wizard, save_config, needs_onboarding,
-                               set_active_model)
+                               set_active_model, prompt_provider_details)
 
 def test_set_active_model_updates_active_provider(tmp_path: Path):
     p = tmp_path / "config.yaml"
@@ -76,6 +76,37 @@ def test_build_config_custom_base_url():
     cfg = build_config(c, model="mixtral", api_key="k", base_url="https://api.groq.com/openai/v1")
     p = cfg["providers"]["custom"]
     assert p["base_url"] == "https://api.groq.com/openai/v1"
+
+def test_custom_provider_has_no_hardcoded_api_key_env():
+    # "custom" covers arbitrary OpenAI-compatible endpoints (Groq, OpenRouter,
+    # ...) with no single correct env var - a hardcoded one (it used to be
+    # OPENAI_API_KEY) makes a blank key at setup silently fall back to
+    # whatever real key that env var holds and send it to the custom
+    # endpoint. There must be no default to fall back to.
+    c = next(c for c in PROVIDER_CHOICES if c.name == "custom")
+    assert c.api_key_env is None
+
+def test_custom_provider_blank_key_does_not_leak_openai_key(tmp_path):
+    from pentai.config import load_config
+    c = next(c for c in PROVIDER_CHOICES if c.name == "custom")
+    cfg_dict = build_config(c, model="mixtral", api_key=None,
+                            base_url="https://api.groq.com/openai/v1")
+    assert "api_key_env" not in cfg_dict["providers"]["custom"]
+    cfg = load_config(cfg_dict, env={"OPENAI_API_KEY": "sk-real-openai-key"})
+    assert cfg.providers["custom"].api_key is None
+
+def test_prompt_provider_details_custom_key_label_is_generic():
+    c = next(c for c in PROVIDER_CHOICES if c.name == "custom")
+    prompts = []
+    def prompt_fn(p):
+        prompts.append(p)
+        return {"Base URL (OpenAI-compatible): ": "https://api.groq.com/openai/v1",
+                "Model []: ": "mixtral"}.get(p, "gsk-key")
+    cfg = prompt_provider_details(c, prompt_fn)
+    assert cfg["providers"]["custom"]["api_key"] == "gsk-key"
+    key_prompt = prompts[-1]
+    assert "OPENAI_API_KEY" not in key_prompt
+    assert "API key" in key_prompt
 
 def test_run_wizard_anthropic_flow():
     answers = iter(["1", "", "sk-ant-abc"])  # choose 1, default model, paste key
