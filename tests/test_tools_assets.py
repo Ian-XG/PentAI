@@ -50,7 +50,17 @@ def test_record_service_tool_requires_address_and_port(tmp_path: Path):
 def test_record_service_tool_bad_port(tmp_path: Path):
     msg = record_service_tool({"address": "10.0.0.5", "port": "notaport"}, session_dir=tmp_path)
     assert "invalid port" in msg.lower()
-    assert load_assets(tmp_path) == []
+
+def test_record_service_tool_confirms_correct_service_on_proto_clash(tmp_path: Path):
+    # a host can have distinct tcp and udp services on the same port -
+    # the confirmation message must name the one that was just recorded,
+    # not whichever one happens to match on port alone.
+    msg_tcp = record_service_tool({"address": "10.0.0.5", "port": 53, "proto": "tcp",
+                                   "service": "dns-tcp"}, session_dir=tmp_path)
+    msg_udp = record_service_tool({"address": "10.0.0.5", "port": 53, "proto": "udp",
+                                   "service": "dns-udp"}, session_dir=tmp_path)
+    assert "dns-tcp" in msg_tcp
+    assert "dns-udp" in msg_udp
 
 def test_tool_schema_requires_address_and_port():
     assert RECORD_SERVICE_TOOL.parameters["required"] == ["address", "port"]

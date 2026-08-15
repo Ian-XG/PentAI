@@ -27,13 +27,18 @@ def record_service_tool(args: dict, *, session_dir: Path) -> str:
         port = int(port)
     except (TypeError, ValueError):
         return f"[record_service: invalid port {port!r}]"
+    proto = args.get("proto", "tcp")
     h = record_service(session_dir, address=address, port=port,
-                       proto=args.get("proto", "tcp"), state=args.get("state", "open"),
+                       proto=proto, state=args.get("state", "open"),
                        service=args.get("service", ""), product=args.get("product", ""),
                        version=args.get("version", ""), hostname=args.get("hostname", ""),
                        os=args.get("os", ""))
-    svc = next((s for s in h.services if s.port == port), None)
-    detail = f"{port}/{args.get('proto', 'tcp')}"
+    # match on (port, proto), not port alone - a host can have distinct tcp
+    # and udp services on the same port (record_service itself already keys
+    # on both), and matching port-only here could report the wrong service's
+    # name back to the agent.
+    svc = next((s for s in h.services if s.port == port and s.proto == proto), None)
+    detail = f"{port}/{proto}"
     if svc and svc.name:
         detail += f" {svc.name}"
     return f"[mapped {address} {detail}]"
