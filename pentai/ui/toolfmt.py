@@ -3,7 +3,11 @@ import re
 _RESULT_RE = re.compile(r"exit_code=(-?\d+)\n--- stdout ---\n(.*)\n--- stderr ---\n(.*)$", re.DOTALL)
 
 _SCHEMA_MARKERS = ('"type":"function"', '"arguments"', '"parameters"')
-_INTERNAL_TOOLS = ("run_command", "load_playbook", "save_note")
+# All 5 real agent tool names (must match cli.py's AGENT_TOOL_NAMES - can't
+# import that list directly without a cli.py <-> ui/toolfmt.py import cycle).
+# A stale/incomplete list here lets a schema dump dominated by whichever
+# tool(s) are missing evade detection.
+_INTERNAL_TOOLS = ("run_command", "record_service", "save_note", "record_finding", "load_playbook")
 
 def looks_like_tool_schema_dump(text: str) -> bool:
     """True when a (usually too-small) model echoes the tool JSON schema back as

@@ -63,6 +63,20 @@ def test_stop_resolves_pending_confirm_as_no():
     assert c.awaiting_confirm is False
     assert c.stopped is True
 
+def test_stop_before_request_confirm_declines_on_arrival():
+    # the race: Escape (stop()) can be processed before the worker thread's
+    # queued request_confirm() call actually runs - a stopped turn must
+    # decline a confirm that arrives afterward, not leave it hanging
+    # forever waiting for an answer nothing will ever supply.
+    answers = []
+    c = TurnController(start_turn=lambda t: None)
+    c.submit("scan")
+    c.stop()                          # stopped, but nothing was awaiting confirm yet
+    assert answers == []              # stop() had nothing to resolve
+    c.request_confirm(answers.append)  # arrives late - must decline immediately
+    assert answers == [False]
+    assert c.awaiting_confirm is False
+
 def test_blank_submit_ignored():
     started = []
     c = TurnController(start_turn=started.append)

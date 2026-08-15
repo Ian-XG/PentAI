@@ -45,4 +45,13 @@ class TurnController:
             cb(False)
 
     def request_confirm(self, on_answer: Callable[[bool], None]) -> None:
+        if self.stopped:
+            # stop() runs on the main loop thread and can win a race against
+            # the worker thread's call_soon_threadsafe-scheduled request: if
+            # Escape is processed before that callback runs, stop() finds
+            # _awaiting_confirm still None and has nothing to resolve, then
+            # THIS arrives after - decline immediately instead of leaving the
+            # worker thread's confirm blocked on an answer that will never come.
+            on_answer(False)
+            return
         self._awaiting_confirm = on_answer

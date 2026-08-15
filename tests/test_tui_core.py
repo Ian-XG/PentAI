@@ -1,5 +1,21 @@
 from rich.markdown import Markdown
-from pentai.ui.tui_core import render_to_ansi, TurnQueue
+from pentai.ui.tui_core import render_to_ansi, TurnQueue, output_rows
+
+def test_output_rows_no_bars_visible():
+    assert output_rows(24, scrolled=False, thinking=False) == 20   # 24 - 4
+
+def test_output_rows_one_bar_visible():
+    assert output_rows(24, scrolled=True, thinking=False) == 19
+    assert output_rows(24, scrolled=False, thinking=True) == 19
+
+def test_output_rows_both_bars_visible_at_once():
+    # the bug: a fixed "-5" margin only ever budgeted for ONE extra bar, so
+    # scrolling up while a turn streams (both jump_bar and thinking_bar
+    # visible) overcounted available rows by 1.
+    assert output_rows(24, scrolled=True, thinking=True) == 18
+
+def test_output_rows_never_goes_below_one():
+    assert output_rows(2, scrolled=True, thinking=True) == 1
 
 def test_render_to_ansi_plain_text():
     out = render_to_ansi("hello world")

@@ -17,7 +17,7 @@ from prompt_toolkit.widgets import Frame, TextArea
 from rich.text import Text
 
 from pentai.commands import SLASH_COMMANDS
-from pentai.ui.tui_core import render_to_ansi
+from pentai.ui.tui_core import render_to_ansi, output_rows
 
 # Phosphor-green theme for the "/" completion dropdown, so it matches the TUI
 # instead of prompt_toolkit's default light-gray menu. Selected row is inverted
@@ -50,15 +50,20 @@ class SlashCompleter(Completer):
 class OutputBuffer:
     def __init__(self) -> None:
         self._renderers: list = []
-        self._version = 0
         self._cache_width = None
-        self._cache_version = -1
-        self._cache_text = ""
+        self._cache_rendered: list[str] = []   # rendered text per renderer, at _cache_width
 
     def append_renderer(self, fn) -> None:
         # fn: Callable[[int], str] rendering ANSI at the given width
         self._renderers.append(fn)
-        self._version += 1
+        if self._cache_width is not None:
+            # render just the new one at the already-known width instead of
+            # invalidating everything - cli.py appends a renderer per text
+            # delta/tool event during a turn, so re-rendering the WHOLE
+            # session on every one of those was O(n) per chunk, O(n^2) over
+            # a session. A width change (the only thing that can change how
+            # earlier content wraps) still forces a full recompute below.
+            self._cache_rendered.append(fn(self._cache_width))
 
     def append(self, renderable, theme=None) -> None:
         self.append_renderer(lambda w, r=renderable, t=theme: render_to_ansi(r, width=w, theme=t))
@@ -69,16 +74,13 @@ class OutputBuffer:
 
     def clear(self) -> None:
         self._renderers.clear()
-        self._version += 1
+        self._cache_rendered.clear()
 
     def render(self, width: int) -> str:
-        if width == self._cache_width and self._version == self._cache_version:
-            return self._cache_text
-        text = "".join(fn(width) for fn in self._renderers)
-        self._cache_width = width
-        self._cache_version = self._version
-        self._cache_text = text
-        return text
+        if width != self._cache_width:
+            self._cache_width = width
+            self._cache_rendered = [fn(width) for fn in self._renderers]
+        return "".join(self._cache_rendered)
 
     def line_count(self, width: int) -> int:
         return self.render(width).count("\n") + 1
@@ -115,8 +117,8 @@ def build_app(*, output: OutputBuffer,
     input_frame = Frame(input_area, title="message")
 
     def _output_rows() -> int:
-        # rows available for the output region: total minus input frame (3) and status (1) and a margin
-        return max(1, shutil.get_terminal_size((100, 24)).lines - 5)
+        return output_rows(shutil.get_terminal_size((100, 24)).lines,
+                           scrolled=scroll["offset"] > 0, thinking=get_thinking() is not None)
 
     def _output_width() -> int:
         return max(20, shutil.get_terminal_size((100, 24)).columns)

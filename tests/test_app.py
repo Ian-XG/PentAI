@@ -50,11 +50,28 @@ def test_output_buffer_caches_and_invalidates():
     b.append_renderer(counting_renderer)
     b.render(80); b.render(80)               # same width + no new content -> render fn called once
     assert calls["n"] == 1
-    b.render(100)                             # width changed -> recompute
+    b.render(100)                             # width changed -> full recompute of every renderer
     assert calls["n"] == 2
-    b.append_renderer(counting_renderer)      # new content -> next render recomputes
-    b.render(100)
-    assert calls["n"] == 4                    # both renderers called (2 items) on recompute
+    b.append_renderer(counting_renderer)      # appending computes the NEW renderer immediately...
+    assert calls["n"] == 3
+    b.render(100)                             # ...so rendering at the same width recomputes nothing
+    assert calls["n"] == 3
+
+def test_output_buffer_appends_are_incremental_not_quadratic():
+    # a renderer must be computed exactly once, not re-invoked on every later
+    # append+render - cli.py appends one per text delta/tool event during a
+    # turn, so re-rendering everything on each append was O(n) per chunk and
+    # O(n^2) over a whole session.
+    calls = {"n": 0}
+    b = OutputBuffer()
+    def counting_renderer(w):
+        calls["n"] += 1
+        return "x\n"
+    b.render(80)                              # establish a cached width first
+    for _ in range(5):
+        b.append_renderer(counting_renderer)
+        b.render(80)
+    assert calls["n"] == 5                    # not 1+2+3+4+5=15
 
 
 def test_app_submit_then_exit_headless():

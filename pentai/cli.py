@@ -820,6 +820,12 @@ def main_tui(argv: list[str]) -> int:
             else:
                 flush()
             finally:
+                # Stopping mid-stream (Escape) breaks the loop above without
+                # raising or completing normally, so neither except's nor
+                # else's flush() runs - text already buffered before the stop
+                # would otherwise vanish silently. No-op if one of those
+                # already flushed (buf is empty by then).
+                flush()
                 def _done() -> None:
                     thinking["start"] = None
                     session.save_history(agent.history)   # persist after every turn

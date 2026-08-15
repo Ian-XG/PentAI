@@ -10,6 +10,14 @@ def render_to_ansi(renderable, width: int | None = None, theme=None) -> str:
     console.print(renderable)
     return buf.getvalue()
 
+def output_rows(terminal_lines: int, *, scrolled: bool, thinking: bool) -> int:
+    """Rows available for the output region: total minus the input frame (3,
+    fixed - top/bottom border + the input line) and the status bar (1,
+    fixed), minus jump_bar and thinking_bar (1 row each, only when actually
+    visible - both can show at once, e.g. scrolled up while a turn streams)."""
+    extra_bars = (1 if scrolled else 0) + (1 if thinking else 0)
+    return max(1, terminal_lines - 4 - extra_bars)
+
 def format_thinking(chars: int, elapsed_seconds: float) -> str:
     tokens = chars // 4  # rough token estimate from streamed characters
     tok = f"{tokens/1000:.1f}k" if tokens >= 1000 else str(tokens)
