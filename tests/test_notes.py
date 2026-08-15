@@ -9,3 +9,8 @@ def test_save_note_appends(tmp_path: Path):
 
 def test_note_tool_name():
     assert SAVE_NOTE_TOOL.name == "save_note"
+
+def test_notes_md_is_written_0600(tmp_path: Path):
+    import os
+    save_note("secret creds: admin:hunter2", session_dir=tmp_path)
+    assert (os.stat(tmp_path / "notes.md").st_mode & 0o777) == 0o600
