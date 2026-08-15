@@ -7,8 +7,14 @@ def list_playbooks(skills_dir: Path) -> list[str]:
     return sorted(p.stem for p in skills_dir.glob("*.md"))
 
 def load_playbook(name: str, *, skills_dir: Path) -> str:
-    path = skills_dir / f"{name}.md"
-    if not path.exists():
+    # `name` comes from the agent, which can be steered by prompt injection
+    # in scanned target content (this tool's whole threat model) - confine
+    # the resolved path to skills_dir so "../../sessions/<id>/notes" can't
+    # read anything outside the playbook directory. Same failure message
+    # either way, so a traversal attempt learns nothing about what's there.
+    skills_dir = skills_dir.resolve()
+    path = (skills_dir / f"{name}.md").resolve()
+    if not path.is_relative_to(skills_dir) or not path.exists():
         return f"[playbook not found: {name}]"
     return path.read_text()
 
