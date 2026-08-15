@@ -26,11 +26,15 @@ def save_transcript(history: list[Message], path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = json.dumps([message_to_dict(m) for m in history], indent=1)
     tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(payload)
+    # Create at 0600 from the first byte instead of write-then-chmod -
+    # transcripts hold creds/evidence, so there must be no window where a
+    # (partially written) copy has default permissions. Same fix as
+    # findings.py in commit 5e8947b.
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     try:
-        os.chmod(tmp, 0o600)   # transcripts hold creds/evidence - owner-only
-    except OSError:
-        pass
+        os.write(fd, payload.encode())
+    finally:
+        os.close(fd)
     tmp.replace(path)          # atomic: never leaves a half-written transcript
 
 def load_transcript(path: Path) -> list[Message]:

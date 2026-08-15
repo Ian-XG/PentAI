@@ -44,3 +44,9 @@ def test_save_creates_parent_dir(tmp_path: Path):
     p = tmp_path / "sub" / "dir" / "transcript.json"
     save_transcript([Message("user", "hi")], p)
     assert load_transcript(p) == [Message("user", "hi")]
+
+def test_transcript_is_written_0600(tmp_path: Path):
+    import os
+    p = tmp_path / "transcript.json"
+    save_transcript([Message("user", "secret creds: admin:hunter2")], p)
+    assert (os.stat(p).st_mode & 0o777) == 0o600
