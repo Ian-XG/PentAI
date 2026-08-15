@@ -34,6 +34,30 @@ def test_load_corrupt_returns_empty(tmp_path: Path):
     p.write_text("{not json")
     assert load_transcript(p) == []
 
+def test_load_skips_entry_missing_role(tmp_path: Path):
+    # a stale/malformed record must not crash session resume - it's skipped,
+    # not fatal, same tolerance already applied to findings.py/assets.py.
+    import json
+    p = tmp_path / "transcript.json"
+    p.write_text(json.dumps([{"content": "no role here"},
+                             {"role": "user", "content": "real message"}]))
+    assert [m.content for m in load_transcript(p)] == ["real message"]
+
+def test_load_skips_tool_call_missing_id(tmp_path: Path):
+    import json
+    p = tmp_path / "transcript.json"
+    p.write_text(json.dumps([
+        {"role": "assistant", "content": "", "tool_calls": [{"name": "run_command"}]},
+        {"role": "user", "content": "real message"},
+    ]))
+    assert [m.content for m in load_transcript(p)] == ["real message"]
+
+def test_load_skips_non_dict_entries(tmp_path: Path):
+    import json
+    p = tmp_path / "transcript.json"
+    p.write_text(json.dumps(["garbage", 42, {"role": "user", "content": "real message"}]))
+    assert [m.content for m in load_transcript(p)] == ["real message"]
+
 def test_save_is_atomic_no_partial_on_reserialize(tmp_path: Path):
     p = tmp_path / "t.json"
     save_transcript([Message("user", "one")], p)

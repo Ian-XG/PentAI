@@ -44,4 +44,14 @@ def load_transcript(path: Path) -> list[Message]:
         return []
     if not isinstance(data, list):
         return []
-    return [message_from_dict(d) for d in data]
+    messages = []
+    for d in data:
+        try:
+            messages.append(message_from_dict(d))
+        except (KeyError, TypeError, AttributeError):
+            # a stale/malformed record (missing "role", a tool_call missing
+            # "id"/"name", or a non-dict entry) must not crash session
+            # resume - skip it and keep the rest, same tolerance already
+            # applied to findings.py/assets.py.
+            continue
+    return messages
