@@ -85,8 +85,19 @@ def _sessions_root(base: Path) -> Path:
 def new_session(base: Path, *, provider: str = "", model: str = "",
                 scope: list[str] | None = None, now=_now) -> Session:
     stamp = now()
-    d = _sessions_root(base) / stamp
-    meta = SessionMeta(id=stamp, created_at=stamp, last_active=stamp,
+    root = _sessions_root(base)
+    session_id, n = stamp, 1
+    # _now()'s 1-second resolution means two sessions started in the same
+    # second would otherwise share a directory and the second _write_meta()
+    # would silently clobber the first's. Disambiguate with a suffix instead -
+    # created_at stays the true timestamp, only id/the directory name change,
+    # and "<stamp>-2" sorts right after "<stamp>" (it's a suffix of it), so
+    # list_sessions' newest-first ordering is unaffected.
+    while (root / session_id).exists():
+        n += 1
+        session_id = f"{stamp}-{n}"
+    d = root / session_id
+    meta = SessionMeta(id=session_id, created_at=stamp, last_active=stamp,
                        provider=provider, model=model, scope=list(scope or []))
     s = Session(d, meta)
     s._write_meta()
