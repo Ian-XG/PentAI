@@ -57,6 +57,35 @@ def test_load_assets_missing_and_corrupt(tmp_path: Path):
     (tmp_path / "assets.json").write_text("{bad")
     assert load_assets(tmp_path) == []
 
+def test_load_assets_tolerates_host_missing_address(tmp_path: Path):
+    # load_assets runs on nearly every turn - a stale/hand-edited record
+    # missing 'address' must be skipped, not crash the whole session.
+    import json
+    (tmp_path / "assets.json").write_text(json.dumps([
+        {"hostname": "no-address-here"},
+        {"address": "10.0.0.5", "hostname": "web01"},
+    ]))
+    hosts = load_assets(tmp_path)
+    assert [h.address for h in hosts] == ["10.0.0.5"]
+
+def test_load_assets_tolerates_bad_service_entries(tmp_path: Path):
+    import json
+    (tmp_path / "assets.json").write_text(json.dumps([
+        {"address": "10.0.0.5",
+         "services": [{"port": 80, "name": "http"}, {"no": "port"}, "garbage", 42]},
+    ]))
+    services = load_assets(tmp_path)[0].services
+    assert len(services) == 1 and services[0].port == 80 and services[0].name == "http"
+
+def test_load_assets_tolerates_unknown_service_keys(tmp_path: Path):
+    import json
+    (tmp_path / "assets.json").write_text(json.dumps([
+        {"address": "10.0.0.5",
+         "services": [{"port": 443, "name": "https", "cvss": 9.1, "extra": "x"}]},
+    ]))
+    s = load_assets(tmp_path)[0].services[0]
+    assert s.port == 443 and s.name == "https"
+
 def test_summarize_assets_compact_lines():
     hosts = [Host(address="10.0.0.5", hostname="web01", os="Linux",
                   services=[Service(port=22, name="ssh", product="OpenSSH", version="8.2"),
