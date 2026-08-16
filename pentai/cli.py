@@ -797,6 +797,16 @@ def main_tui(argv: list[str]) -> int:
                         history=restored)
 
     def _start_turn(text: str) -> None:
+        # Capture session/agent as per-turn locals instead of reading the
+        # outer session/agent names from worker()/_done() below - those
+        # names get reassigned by /resume, and a closure reads a free
+        # variable's CURRENT value, not its value at closure-creation time.
+        # Without this, /resume while this turn's worker thread is still
+        # running makes _done() (which fires later, once streaming finishes)
+        # persist the turn to whatever session /resume switched to, silently
+        # losing it from the session it actually belongs to.
+        turn_session = session
+        turn_agent = agent
         thinking["start"] = time.time()
         thinking["chars"] = 0
         def render_tool(ev: ToolInvocation) -> None:
@@ -851,7 +861,7 @@ def main_tui(argv: list[str]) -> int:
                     else:
                         _post(md(text_out), theme=markdown_theme(palette))
             try:
-                for ev in agent.send(text):
+                for ev in turn_agent.send(text):
                     if controller.stopped:
                         break
                     if isinstance(ev, TextDelta):
@@ -879,7 +889,7 @@ def main_tui(argv: list[str]) -> int:
                 flush()
                 def _done() -> None:
                     thinking["start"] = None
-                    session.save_history(agent.history)   # persist after every turn
+                    turn_session.save_history(turn_agent.history)   # persist after every turn
                     controller.finish()
                     app.invalidate()
                 _run_on_loop(_done)
