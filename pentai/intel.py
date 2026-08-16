@@ -94,7 +94,11 @@ def intel_leads(hosts) -> str:
     lines: list[str] = []
     for h in hosts:
         for s in h.services:
-            if "open" not in s.state:
+            # exact match, not a substring check: nmap's "open|filtered" is
+            # an ambiguous, UNconfirmed state (it contains "open" as a
+            # substring but isn't one) - treating it as confirmed open here
+            # would generate a lead/vuln flag nmap itself never verified.
+            if s.state != "open":
                 continue
             intel = service_intel(s.name, s.product, s.version, port=s.port)
             if not intel.next_steps and not intel.vulns:

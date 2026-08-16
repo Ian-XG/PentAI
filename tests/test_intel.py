@@ -50,3 +50,13 @@ def test_intel_leads_lists_open_services_with_leads():
 def test_intel_leads_empty():
     assert intel_leads([]) == ""
     assert intel_leads([Host(address="10.0.0.5", services=[])]) == ""
+
+def test_intel_leads_excludes_ambiguous_open_filtered_state():
+    # nmap's "open|filtered" is an UNconfirmed state - it must not be
+    # treated as confirmed open just because it contains the substring
+    # "open" (the same way closed|filtered is already correctly excluded).
+    hosts = [Host(address="10.0.0.5", services=[
+        Service(port=80, name="http", state="open|filtered"),
+        Service(port=81, name="http", state="closed|filtered"),
+    ])]
+    assert intel_leads(hosts) == ""
