@@ -1,4 +1,4 @@
-from pentai.ui.startup import capability_rows, render_startup
+from pentai.ui.startup import capability_rows, render_startup, render_toolcheck
 from pentai.ui.theme import get_palette
 from rich.console import Console
 
@@ -52,3 +52,11 @@ def test_render_startup_80col_stacks_without_overflow():
     assert "PentAI" in out and "recon" in out and "gpt-oss:120b" in out
     # no line should exceed the console width (no overflow)
     assert all(len(line) <= 80 for line in out.splitlines())
+
+def test_render_toolcheck_shows_a_found_over_total_count():
+    con = Console(record=True, width=200)
+    render_toolcheck(con, get_palette("green"),
+                     [("nmap", True), ("masscan", False), ("curl", True)])
+    out = con.export_text()
+    assert "2/3" in out
+    assert "nmap" in out and "masscan" in out and "curl" in out
