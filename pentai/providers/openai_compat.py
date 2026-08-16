@@ -133,29 +133,39 @@ class OpenAICompatProvider:
                     buf["name"] = fn["name"]
                 if fn.get("arguments"):
                     buf["arguments"] += fn["arguments"]
+            if delta.get("content"):
+                # A chunk can bundle the last content token together with
+                # finish_reason (seen with some vLLM/proxy configs) - yield it
+                # unconditionally, don't wait for the finish handling below,
+                # or it's silently dropped.
+                yield TextDelta(delta["content"])
             finish = choice.get("finish_reason")
-            if finish == "tool_calls":
-                for i in sorted(tool_buffer):
-                    buf = tool_buffer[i]
-                    if not buf["name"]:
-                        # A streamed tool call that never carried a function name
-                        # is unusable - skip it rather than emit a call the agent
-                        # can only reject as an unknown tool. Some local models
-                        # emit stray empty tool_call deltas.
-                        continue
-                    try:
-                        args = _json.loads(buf["arguments"] or "{}")
-                    except _json.JSONDecodeError:
-                        # Malformed / partially-streamed JSON args: fall back to
-                        # empty args so the tool still fires with its defaults
-                        # instead of taking down the turn on a decode error.
-                        args = {}
-                    yield ToolCallEvent(buf["id"] or f"call_{i}", buf["name"], args)
-                tool_buffer = {}
-                yield Done("tool_use")
-            elif finish:
-                yield Done("end")
-            else:
-                ev = parse_sse_chunk(data)
-                if ev is not None:
-                    yield ev
+            if finish:
+                if tool_buffer:
+                    # Not every OpenAI-compatible backend finishes a tool-call
+                    # turn with finish_reason == "tool_calls" exactly - some
+                    # local/proxy models finish with "stop" instead. Flush
+                    # whatever accumulated whenever the turn actually ends
+                    # with pending tool calls, not only on that exact string,
+                    # or they're silently lost and the turn ends as if the
+                    # model asked for nothing.
+                    for i in sorted(tool_buffer):
+                        buf = tool_buffer[i]
+                        if not buf["name"]:
+                            # A streamed tool call that never carried a function name
+                            # is unusable - skip it rather than emit a call the agent
+                            # can only reject as an unknown tool. Some local models
+                            # emit stray empty tool_call deltas.
+                            continue
+                        try:
+                            args = _json.loads(buf["arguments"] or "{}")
+                        except _json.JSONDecodeError:
+                            # Malformed / partially-streamed JSON args: fall back to
+                            # empty args so the tool still fires with its defaults
+                            # instead of taking down the turn on a decode error.
+                            args = {}
+                        yield ToolCallEvent(buf["id"] or f"call_{i}", buf["name"], args)
+                    tool_buffer = {}
+                    yield Done("tool_use")
+                else:
+                    yield Done("end")
