@@ -688,6 +688,15 @@ def main_update(argv: list[str] | None = None) -> int:
 
 def main_tui(argv: list[str]) -> int:
     console = Console()
+    if not sys.stdout.isatty():
+        # Check this before anything else runs: resolve_session() below can
+        # create a brand-new session directory on disk (new_session's
+        # _write_meta), and needs_onboarding()/run_wizard() would try to
+        # read interactive input - neither should happen for a non-tty
+        # invocation (piped output, CI, automation) that's just going to
+        # bail out anyway.
+        console.print("[!] --tui needs an interactive terminal; use classic mode (just run pentai).", markup=False)
+        return 0
     if needs_onboarding():
         onboard_palette = get_palette("green")
         try:
@@ -1033,9 +1042,6 @@ def main_tui(argv: list[str]) -> int:
     app = build_app(output=output, on_submit=_on_submit, on_stop=controller.stop,
                     on_cycle_mode=_cycle_mode, get_status=_status, get_thinking=get_thinking)
 
-    if not sys.stdout.isatty():
-        console.print("[!] --tui needs an interactive terminal; use classic mode (just run pentai).", markup=False)
-        return 0
     console.clear()  # clean launch: no leftover shell prompt above the full-screen app
     try:
         app.run()

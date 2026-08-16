@@ -205,6 +205,27 @@ def test_restore_terminal_disables_mouse_tracking(capsys):
     for seq in ("\x1b[?1000l", "\x1b[?1003l", "\x1b[?1006l", "\x1b[?1015l", "\x1b[?25h"):
         assert seq in out          # every mouse mode disabled + cursor shown
 
+def test_main_tui_non_interactive_bails_before_any_side_effects(monkeypatch, capsys):
+    # a non-tty invocation (piped output, CI, automation) must bail out
+    # before resolve_session() (which can create a brand-new session
+    # directory on disk via new_session) or needs_onboarding()/the wizard
+    # ever run - not just before app.run() at the very end.
+    import sys
+    import pentai.cli as cli
+    monkeypatch.setattr(sys.stdout, "isatty", lambda: False)
+    called = {}
+    def mark(name):
+        def _fake(*a, **k):
+            called[name] = True
+            return False
+        return _fake
+    monkeypatch.setattr(cli, "resolve_session", mark("resolve_session"))
+    monkeypatch.setattr(cli, "needs_onboarding", mark("needs_onboarding"))
+    rc = cli.main_tui([])
+    assert rc == 0
+    assert called == {}                    # neither was ever reached
+    assert "interactive terminal" in capsys.readouterr().out
+
 def test_main_settings_flag_dispatches(monkeypatch):
     import pentai.cli as cli
     calls = {}
