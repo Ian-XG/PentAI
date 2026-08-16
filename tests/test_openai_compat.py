@@ -165,3 +165,31 @@ def test_chat_does_not_retry_400_without_tools():
         assert False, "expected HTTPStatusError to propagate"
     except httpx.HTTPStatusError:
         pass
+
+def test_chat_flushes_tool_call_on_non_standard_finish_reason():
+    # not every OpenAI-compatible backend finishes a tool-call turn with
+    # finish_reason == "tool_calls" exactly - some local/proxy models finish
+    # with "stop" instead. The pending tool call must still fire.
+    lines = [
+        'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"run_command","arguments":"{}"}}]}}]}',
+        'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}',
+        'data: [DONE]',
+    ]
+    prov = OpenAICompatProvider("http://x/v1", "k", "gpt-4o",
+                                poster=lambda url, headers, json: iter(lines))
+    tcs = [e for e in prov.chat([Message("user", "scan")], []) if isinstance(e, ToolCallEvent)]
+    assert len(tcs) == 1 and tcs[0].name == "run_command"
+
+def test_chat_keeps_content_bundled_with_finish_reason():
+    # a backend can send the final content token together with finish_reason
+    # in the same chunk instead of as a separate one - that text must not be
+    # silently dropped.
+    lines = [
+        'data: {"choices":[{"delta":{"content":"the box is up"},"finish_reason":"stop"}]}',
+        'data: [DONE]',
+    ]
+    prov = OpenAICompatProvider("http://x/v1", "k", "gpt-4o",
+                                poster=lambda url, headers, json: iter(lines))
+    events = list(prov.chat([Message("user", "status?")], []))
+    assert any(isinstance(e, TextDelta) and e.text == "the box is up" for e in events)
+    assert any(isinstance(e, Done) for e in events)
