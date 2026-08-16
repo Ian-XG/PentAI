@@ -298,13 +298,23 @@ def apply_mode_command(current: str, args: list[str]) -> str:
         return args[0]
     return current
 
+_LOCAL_HOSTS = ("localhost", "127.0.0.1", "0.0.0.0", "::1")
+
+def _is_local_url(base_url: str | None) -> bool:
+    return bool(base_url) and any(h in base_url for h in _LOCAL_HOSTS)
+
 def provider_ready(cfg: Config) -> bool:
     pc = cfg.providers[cfg.active]
     if pc.api_key:
         return True
     if pc.kind == "anthropic":
         return False
-    if pc.api_key_env is None:
+    # api_key_env being unset isn't proof a key isn't needed - it's also true
+    # for "custom" (Groq/OpenRouter/etc, since cycle 11's fix removed its
+    # hardcoded env var to stop it leaking OPENAI_API_KEY to third-party
+    # endpoints). A local base_url is the actual signal a provider needs no
+    # auth at all; anything else with no key configured genuinely isn't ready.
+    if pc.api_key_env is None and _is_local_url(pc.base_url):
         return True
     return False
 

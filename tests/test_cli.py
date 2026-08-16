@@ -106,6 +106,18 @@ def test_provider_ready_true_for_keyless_local(monkeypatch):
                                                  base_url="http://localhost:11434/v1")})
     assert provider_ready(cfg) is True
 
+def test_provider_ready_false_for_remote_provider_with_no_key_or_env():
+    # "custom" (Groq/OpenRouter/etc) has no api_key_env by design (cycle 11 -
+    # no single default is correct for it), but that must not be read as
+    # "doesn't need a key" the way it correctly is for a local Ollama: a
+    # remote provider with no key configured genuinely isn't ready.
+    from pentai.config import Config, ProviderConfig
+    from pentai.cli import provider_ready
+    cfg = Config(active="custom",
+                 providers={"custom": ProviderConfig("openai_compat", "mixtral",
+                                                      base_url="https://api.groq.com/openai/v1")})
+    assert provider_ready(cfg) is False
+
 def test_apply_mode_command_cycles_and_sets():
     from pentai.cli import apply_mode_command
     assert apply_mode_command("ask", []) == "auto"      # cycle
