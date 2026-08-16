@@ -13,7 +13,6 @@ from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.formatted_text import HTML
 from rich.console import Console
 from rich.markup import escape
-from rich.markdown import Markdown
 from rich.live import Live
 from rich.text import Text
 from .config import Config, load_config, load_config_file, default_config
@@ -477,14 +476,14 @@ def main_classic(argv: list[str] | None = None) -> int:
             if result == "__notes__":
                 notes = session_dir / "notes.md"
                 if notes.exists():
-                    console.print(Markdown(notes.read_text()))
+                    console.print(md(notes.read_text()))
                 else:
                     console.print("[no notes yet]", style=palette["dim"], markup=False)
                 continue
             if result == "__hosts__":
                 hosts_md = render_assets(load_assets(session_dir))
                 if hosts_md:
-                    console.print(Markdown("## Attack Surface\n\n" + hosts_md))
+                    console.print(md("## Attack Surface\n\n" + hosts_md))
                 else:
                     console.print("[no hosts mapped yet - the agent maps them with record_service]",
                                   style=palette["dim"], markup=False)
@@ -501,7 +500,7 @@ def main_classic(argv: list[str] | None = None) -> int:
                 continue
             if result == "__report__":
                 md_text, out = build_and_save_report(session, scope.entries)
-                console.print(Markdown(md_text))
+                console.print(md(md_text))
                 console.print(f"[ saved report to {out} ]", style=palette["accent"], markup=False)
                 continue
             if result == "__tools__":
@@ -512,7 +511,7 @@ def main_classic(argv: list[str] | None = None) -> int:
                 names = list_playbooks(_SKILLS_DIR)
                 if slash[1]:
                     name = slash[1][0]
-                    console.print(Markdown(load_playbook(name, skills_dir=_SKILLS_DIR)))
+                    console.print(md(load_playbook(name, skills_dir=_SKILLS_DIR)))
                 else:
                     console.print("playbooks: " + ", ".join(names), style=palette["accent"])
                 continue
@@ -529,7 +528,7 @@ def main_classic(argv: list[str] | None = None) -> int:
         def render_text(text):
             stop()
             console.print("AI", style=palette["accent"])
-            console.print(Markdown(text))
+            console.print(md(text))
 
         def render_tool(ev):
             nonlocal cmds
