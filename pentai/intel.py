@@ -68,6 +68,18 @@ class ServiceIntel:
     next_steps: list[str] = field(default_factory=list)
     vulns: list[str] = field(default_factory=list)
 
+def _version_matches(v: str, ver_prefix: str) -> bool:
+    """True if v IS ver_prefix, or a variant/build of it (a suffix like
+    "p1"/"-ubuntu"/"a") - but not a different, longer version number that
+    merely starts with the same digits. "2.3.4" and "2.3.4p1" both match
+    prefix "2.3.4"; "2.3.40" does not (a plain startswith() would wrongly
+    match it too - the char right after the prefix decides: a digit means
+    it's a different version, anything else (or nothing) means a variant)."""
+    if not v.startswith(ver_prefix):
+        return False
+    rest = v[len(ver_prefix):]
+    return not rest or not rest[0].isdigit()
+
 def _known_vulns(product: str, version: str) -> list[str]:
     p = (product or "").lower()
     v = (version or "").strip()
@@ -75,7 +87,7 @@ def _known_vulns(product: str, version: str) -> list[str]:
     for prod_sub, ver_prefix, note in _KNOWN_VULNS:
         if prod_sub not in p:
             continue
-        if ver_prefix and not v.startswith(ver_prefix):
+        if ver_prefix and not _version_matches(v, ver_prefix):
             continue
         out.append(note)
     return out
