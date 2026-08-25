@@ -3,6 +3,10 @@ from typing import Callable, Iterator
 from .providers.base import (Provider, Message, Tool, ToolCall,
                              TextDelta, ToolCallEvent, Done, Notice)
 
+MAX_ITERATIONS_NOTICE = (
+    "hit the tool-call limit for this turn and stopped mid-task - the last "
+    "step may be incomplete. Send another message to continue.")
+
 @dataclass
 class ToolSpec:
     tool: Tool
@@ -66,3 +70,9 @@ class Agent:
                         result = f"[tool error: {type(exc).__name__}: {exc}]"
                 self.history.append(Message("tool", result, tool_call_id=call.id))
                 yield ToolInvocation(call.name, call.arguments, result)
+        else:
+            # The for loop ran out of iterations without a natural `return`
+            # (i.e. the model kept calling tools every round) - without this,
+            # the turn just stops with no explanation, and the operator can't
+            # tell a finished task from one cut off mid-engagement.
+            yield Notice(MAX_ITERATIONS_NOTICE)

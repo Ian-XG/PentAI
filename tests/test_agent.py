@@ -1,4 +1,4 @@
-from pentai.providers.base import Message, Tool, TextDelta, ToolCallEvent, Done
+from pentai.providers.base import Message, Tool, TextDelta, ToolCallEvent, Done, Notice
 from pentai.agent import Agent, ToolSpec, ToolInvocation
 
 class ScriptedProvider:
@@ -87,6 +87,25 @@ def test_agent_stops_at_max_iterations():
     agent = Agent(prov, "sys", {"run_command": spec})
     list(agent.send("scan"))
     assert prov.calls <= 25
+
+def test_agent_notifies_when_it_hits_max_iterations():
+    # the old behavior: send() just stops after MAX_ITERATIONS with no
+    # indication the task was cut off mid-engagement - the operator can't
+    # tell "finished" from "ran out of turns". Must yield a Notice instead.
+    tool = Tool("run_command", "run", {"type": "object"})
+    spec = ToolSpec(tool, lambda args: "exit=0")
+    prov = LoopingProvider()
+    agent = Agent(prov, "sys", {"run_command": spec})
+    out = list(agent.send("scan"))
+    notices = [e for e in out if isinstance(e, Notice)]
+    assert len(notices) == 1
+    assert "stopped" in notices[0].text.lower()
+
+def test_agent_no_max_iterations_notice_when_turn_finishes_naturally():
+    prov = ScriptedProvider([[TextDelta("done"), Done("end")]])
+    agent = Agent(prov, "sys", {})
+    out = list(agent.send("hi"))
+    assert not any(isinstance(e, Notice) for e in out)
 
 def test_tool_exception_becomes_result_and_turn_continues():
     def boom(args):
