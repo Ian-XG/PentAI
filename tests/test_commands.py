@@ -65,6 +65,17 @@ def test_settings_in_menu_and_help():
     assert "/settings" in names
     assert "/settings" in handle_slash("help", [], scope=Scope([]))
 
+def test_setup_in_menu_matches_help_and_works_as_settings_alias():
+    # /setup was documented in _HELP and worked via handle_slash, but was
+    # missing from SLASH_COMMANDS - the list that drives the TUI's "/"
+    # autocomplete menu (pentai/ui/app.py's SlashCompleter). It silently
+    # worked if typed, but never showed up when discovering commands there.
+    from pentai.commands import SLASH_COMMANDS, handle_slash
+    from pentai.scope import Scope
+    names = [c for c, _ in SLASH_COMMANDS]
+    assert "/setup" in names
+    assert handle_slash("setup", [], scope=Scope([])) == "__setup__"
+
 def test_model_sentinel_and_help():
     from pentai.scope import Scope
     from pentai.commands import handle_slash, SLASH_COMMANDS

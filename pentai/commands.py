@@ -11,6 +11,7 @@ SLASH_COMMANDS = [
     ("/models", "recommended low-refusal models for ethical-hacking work"),
     ("/update", "check for a newer PentAI version and show how to install it"),
     ("/settings", "change AI provider, key, and settings"),
+    ("/setup", "alias for /settings"),
     ("/sessions", "list past engagements you can resume"),
     ("/resume", "resume a past engagement: /resume <id> (or /resume for the latest)"),
     ("/clear", "clear the screen"),
