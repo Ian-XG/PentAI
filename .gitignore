@@ -6,6 +6,7 @@ __pycache__/
 build/
 dist/
 graphify-out/
+.DS_Store
 
 # never commit real credentials / local config
 .env
