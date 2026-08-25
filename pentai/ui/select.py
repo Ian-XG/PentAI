@@ -61,12 +61,25 @@ def select(options: list[T], *, title: str, render_row: Callable[[T, bool], str]
     def _width() -> int:
         return shutil.get_terminal_size((100, 24)).columns
 
+    def _rendered() -> str:
+        return render_to_ansi(_render(options, state["idx"], title, render_row, palette),
+                              width=_width())
+
     def get_text():
-        return ANSI(render_to_ansi(_render(options, state["idx"], title, render_row, palette),
-                                   width=_width()))
+        return ANSI(_rendered())
+
+    def _height() -> int:
+        # Not a fixed n+4 (title + 2 blank lines + hint, one line per option):
+        # that assumes every row renders as exactly one terminal line. A long
+        # row (e.g. a provider's description) wraps onto 2+ lines on a
+        # narrower terminal, since render_to_ansi wraps rather than
+        # truncating - a fixed height would then clip the wrapped remainder,
+        # up to and including the cancel hint. Count the lines it actually
+        # rendered to at the current width instead.
+        return _rendered().count("\n") + 1
 
     control = FormattedTextControl(get_text, focusable=True)
-    window = Window(content=control, height=n + 4)
+    window = Window(content=control, height=_height)
 
     kb = KeyBindings()
 
