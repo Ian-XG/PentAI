@@ -81,4 +81,12 @@ class Scope:
             return addr in net
         except ValueError:
             pass
+        # DNS names are case-insensitive (RFC 4343): "/scope add Example.com"
+        # must still match a command that targets "example.com", the far more
+        # common way a hostname actually shows up (nmap/curl/browser output).
+        # Case-sensitive matching here spuriously flagged an authorized host
+        # as out of scope - exactly the noise this module's other checks
+        # (extract_targets' file-extension filter, port-stripping in
+        # _normalize_entry) exist to avoid.
+        entry, target = entry.lower(), target.lower()
         return fnmatch(target, entry) or entry == target
