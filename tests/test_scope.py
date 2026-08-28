@@ -63,3 +63,16 @@ def test_scope_add_strips_port_without_scheme():
     s.add("example.com:8080")
     assert s.entries == ["example.com"]
     assert s.contains("example.com")
+
+def test_scope_match_is_case_insensitive_for_hostnames():
+    # DNS names are case-insensitive (RFC 4343) - a scope entry added with
+    # different casing than how the host later shows up in a command (the
+    # normal case: nmap/curl/browsers all render hostnames lowercase) must
+    # still match, not spuriously warn "out of scope".
+    s = Scope(["Example.com"])
+    assert s.contains("example.com")
+    assert s.out_of_scope("curl https://example.com/admin") == []
+
+def test_scope_glob_match_is_case_insensitive():
+    s = Scope(["*.Juice.Local"])
+    assert s.contains("api.juice.local")
