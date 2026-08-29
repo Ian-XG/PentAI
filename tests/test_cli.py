@@ -516,7 +516,7 @@ def test_run_command_auto_ingests_nmap(tmp_path, monkeypatch):
     cfg = Config(active="a", providers={"a": ProviderConfig("anthropic", "m", "k")})
     agent = cli.build_agent(cfg, Scope([]), confirm=lambda p: True, session_dir=tmp_path)
     result = agent.tools["run_command"].run({"command": "nmap -sV 10.0.0.5"})
-    assert "auto-mapped 2 service(s)" in result
+    assert "auto-mapped 2 host/service record(s)" in result
     hosts = load_assets(tmp_path)
     assert {s.port for s in hosts[0].services} == {22, 80}
 

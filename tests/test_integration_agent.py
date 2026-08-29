@@ -67,7 +67,7 @@ def test_run_command_auto_ingests_nmap_into_asset_map(tmp_path):
     inv = next(e for e in out if isinstance(e, ToolInvocation))
 
     assert "22/tcp" in inv.result                      # real command output
-    assert "auto-mapped 2 service(s)" in inv.result    # ingest note appended
+    assert "auto-mapped 2 host/service record(s)" in inv.result    # ingest note appended
     hosts = load_assets(session_dir)                   # persisted to the map
     assert len(hosts) == 1 and hosts[0].address == "10.0.0.5"
     assert {s.port for s in hosts[0].services} == {22, 80}

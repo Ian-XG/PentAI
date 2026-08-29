@@ -30,6 +30,33 @@ def test_ingest_nmap_no_scan_output_records_nothing(tmp_path: Path):
     assert ingest_nmap(tmp_path, "ls: command output, not a scan") == 0
     assert load_assets(tmp_path) == []
 
+def test_ingest_nmap_maps_ping_sweep_hosts_with_no_services(tmp_path: Path):
+    # `nmap -sn <cidr>` (host discovery, recon playbook's own step 1) finds
+    # live hosts but no ports at all - these must still land in the asset
+    # map, not be silently dropped because record_service is per-port.
+    sweep = ("Nmap scan report for 10.0.0.1\nHost is up (0.0012s latency).\n"
+            "Nmap scan report for web01 (10.0.0.5)\nHost is up (0.045s latency).\n")
+    n = ingest_nmap(tmp_path, sweep)
+    assert n == 2
+    hosts = {h.address: h for h in load_assets(tmp_path)}
+    assert set(hosts) == {"10.0.0.1", "10.0.0.5"}
+    assert hosts["10.0.0.5"].hostname == "web01"
+    assert hosts["10.0.0.1"].services == []
+
+def test_ingest_nmap_does_not_record_ambiguous_open_filtered_as_open(tmp_path: Path):
+    # "open|filtered" is nmap's own AMBIGUOUS, unconfirmed state - a substring
+    # check on "open" wrongly matches it, silently recording an unconfirmed
+    # port as if nmap had confirmed it open. Same bug class already fixed in
+    # intel.py's intel_leads(); this is the sibling in the asset-ingest path.
+    # The host itself still gets mapped (nmap did find it live) - it's the
+    # unconfirmed port specifically that must not show up as a service.
+    scan = "Nmap scan report for 10.0.0.9\n53/udp open|filtered domain\n"
+    n = ingest_nmap(tmp_path, scan)
+    assert n == 1                          # the host, not the ambiguous port
+    hosts = load_assets(tmp_path)
+    assert hosts[0].address == "10.0.0.9"
+    assert hosts[0].services == []         # ambiguous port not recorded as a service
+
 def test_record_service_tool_persists(tmp_path: Path):
     msg = record_service_tool({"address": "10.0.0.5", "port": 80, "service": "http",
                                "product": "nginx"}, session_dir=tmp_path)

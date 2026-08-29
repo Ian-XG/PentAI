@@ -150,7 +150,7 @@ def build_agent(cfg: Config, scope: Scope, confirm: Callable[[str], bool],
         if is_nmap_command(cmd):
             n = ingest_nmap(session_dir, out)
             if n:
-                out += f"\n\n[auto-mapped {n} service(s) to the asset map - see /hosts]"
+                out += f"\n\n[auto-mapped {n} host/service record(s) to the asset map - see /hosts]"
         return out
 
     tools = {
