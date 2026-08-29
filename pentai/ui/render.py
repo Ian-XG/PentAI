@@ -1,11 +1,5 @@
 from rich.theme import Theme
 
-_TAGS = {"AI": "[AI]", "EXEC": "[EXEC]", "VULN": "[!] VULN", "INFO": "[INFO]"}
-
-def format_tag(kind: str, text: str) -> str:
-    tag = _TAGS.get(kind, _TAGS["INFO"])
-    return f"{tag} {text}"
-
 def markdown_theme(palette: dict[str, str]) -> Theme:
     accent = palette["accent"]
     dim = palette["dim"]
