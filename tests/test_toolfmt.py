@@ -45,3 +45,15 @@ def test_no_output():
 
 def test_unknown_format_passthrough():
     assert format_command_output("just a string") == "just a string"
+
+def test_internal_tools_list_matches_cli_agent_tool_names():
+    # _INTERNAL_TOOLS is a hand-duplicated copy of cli.py's AGENT_TOOL_NAMES
+    # (toolfmt.py can't import it directly - that would create a cli.py <->
+    # ui/toolfmt.py import cycle, per the comment above _INTERNAL_TOOLS). A
+    # tool added to one list and not the other lets a schema dump naming only
+    # the missing tool(s) evade detection - this exact class of two-lists-
+    # must-match drift has been a real bug more than once in this codebase
+    # (SLASH_COMMANDS vs _HELP, system.md vs cli.py's auto-map message).
+    from pentai.ui.toolfmt import _INTERNAL_TOOLS
+    from pentai.cli import AGENT_TOOL_NAMES
+    assert set(_INTERNAL_TOOLS) == set(AGENT_TOOL_NAMES)
