@@ -174,10 +174,22 @@ def build_app(*, output: OutputBuffer,
 
     # FloatContainer + CompletionsMenu is what actually renders the "/" dropdown;
     # a custom full-screen Application has no completions menu unless we add one.
+    #
+    # ycursor=True (prompt_toolkit's usual way to anchor a completion menu) only
+    # checks that the menu fits within the FloatContainer's total height - it has
+    # no notion that the rows just below the cursor are already spoken for by
+    # input_frame's own bottom border and status_window. It happily draws the
+    # menu over both, corrupting them until the completion list narrows or the
+    # buffer is cleared. bottom=4 anchors the menu's bottom edge to input_frame's
+    # top border instead - input_frame is a fixed 3 rows (border/line/border,
+    # multiline=False keeps it single-line) and status_window is a fixed 1 row
+    # (see output_rows()'s docstring in tui_core.py for the same 3+1 accounting)
+    # - so the menu grows upward over output history, never over the input box
+    # or status bar.
     root = FloatContainer(
         content=HSplit([output_window, jump_bar, thinking_bar, input_frame, status_window]),
         floats=[
-            Float(xcursor=True, ycursor=True,
+            Float(xcursor=True, bottom=4, transparent=True,
                   content=CompletionsMenu(max_height=10, scroll_offset=1)),
         ],
     )
