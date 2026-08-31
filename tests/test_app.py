@@ -199,6 +199,27 @@ def test_app_layout_has_completions_menu_float():
         assert any(isinstance(f.content, CompletionsMenu) for f in root.floats)
 
 
+def test_completions_menu_float_does_not_anchor_on_cursor():
+    # ycursor=True (prompt_toolkit's usual anchor) only checks the menu fits
+    # within the FloatContainer's total height - it has no idea the rows just
+    # below the cursor are already input_frame's own bottom border and
+    # status_window, and paints the menu straight over both. Anchoring by a
+    # fixed `bottom` instead keeps the menu above input_frame, growing over
+    # output history rather than corrupting the input box/status bar.
+    from prompt_toolkit.layout.containers import FloatContainer
+    from prompt_toolkit.layout.menus import CompletionsMenu
+    out = OutputBuffer()
+    with create_pipe_input() as inp:
+        app = build_app(output=out, on_submit=lambda t: None, on_stop=lambda: None,
+                        on_cycle_mode=lambda: None, get_status=lambda: "s",
+                        pt_input=inp, pt_output=DummyOutput())
+        root = app.layout.container
+        assert isinstance(root, FloatContainer)
+        menu_float = next(f for f in root.floats if isinstance(f.content, CompletionsMenu))
+        assert menu_float.ycursor is False
+        assert menu_float.bottom is not None and menu_float.bottom > 0
+
+
 def test_app_mouse_support_pageup_then_end_headless():
     # mouse_support is on by default now; verify the app still builds and runs
     # cleanly through the same scroll/jump-to-bottom key sequence with it enabled.
