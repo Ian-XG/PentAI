@@ -56,3 +56,18 @@ def test_system_prompt_forbids_prose_permission_asking():
     text = (Path(pentai.__file__).parent / "prompts" / "system.md").read_text().lower()
     assert "do not ask for permission in prose" in text
     assert "shall i run this" in text
+
+def test_system_prompt_automap_wording_matches_the_real_message():
+    # system.md quotes, verbatim, the "[auto-mapped ...]" line the model will
+    # actually see after an nmap scan (built in cli.py's build_agent()._run()).
+    # A wording change on one side without the other leaves the model primed
+    # to look for text that never appears - exactly what happened when the
+    # message was reworded from "N service(s)" to "N host/service record(s)"
+    # (ping-sweep hosts fix) without updating this quote.
+    import re
+    cli_src = (PKG / "cli.py").read_text()
+    m = re.search(r"\[auto-mapped \{n\} (.+?) to the asset map", cli_src)
+    assert m, "could not find the auto-mapped message template in cli.py"
+    wording = m.group(1)
+    system_text = (PKG / "prompts" / "system.md").read_text()
+    assert wording in system_text
